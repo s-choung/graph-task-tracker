@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Graph Task Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
@@ -1302,7 +1305,7 @@ function renderDone(){
   rows.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
   const nDone=rows.filter(r=>r.reason==='done').length, nDel=rows.length-nDone;
   const attr=r=>r.reason==='done'?`data-kind="done" data-node="${escapeHtml(r.nodeId)}"`:`data-kind="deleted" data-arch="${r.archIdx}"`;
-  const row=r=>`<div class="drow" draggable="true" ${attr(r)} title="사이드바 프로젝트로 끌어 부활">
+  const row=r=>`<div class="drow" ${attr(r)}>
       <span class="dtag ${r.reason}">${r.reason==='done'?'완료':'삭제'}</span>
       <div class="dmain"><div class="dtitle">${escapeHtml(r.title)}</div>${r.desc?`<div class="ddesc">${escapeHtml(r.desc)}</div>`:''}</div>
       <span class="dproj" title="${escapeHtml(r.project)}">${escapeHtml(r.project)}</span>
@@ -1310,16 +1313,14 @@ function renderDone(){
       <button class="drestore">↩ 부활</button>
     </div>`;
   doneview.innerHTML=`<div class="dwrap">
-    <div class="dhead"><h2>완료함</h2><span class="dsub">완료 ${nDone} · 삭제 ${nDel} · 총 ${rows.length} · 행을 왼쪽 프로젝트로 끌면 부활</span><button class="close" id="dClose" title="닫기">✕</button></div>
+    <div class="dhead"><h2>완료함</h2><span class="dsub">완료 ${nDone} · 삭제 ${nDel} · 총 ${rows.length} · ↩부활 = 원래 프로젝트로 되살림</span><button class="close" id="dClose" title="닫기">✕</button></div>
     ${rows.length?rows.map(row).join(''):'<div class="empty" style="padding:26px 4px">아직 완료하거나 삭제한 항목이 없어요.</div>'}
   </div>`;
   doneview.querySelector('#dClose').onclick=closeDone;
   doneview.querySelectorAll('.drow').forEach(el=>{
     const kind=el.dataset.kind;
     const desc=kind==='done'?{kind:'done',nodeId:el.dataset.node}:{kind:'deleted',archIdx:+el.dataset.arch};
-    el.querySelector('.drestore').onclick=()=>reviveItem(desc);         // 부활 버튼 → 원래 프로젝트로
-    el.addEventListener('dragstart',e=>{ _dragRevive=desc; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain','revive'); });
-    el.addEventListener('dragend',()=>{ _dragRevive=null; });
+    el.querySelector('.drestore').onclick=()=>reviveItem(desc);         // 부활 버튼 → 원래 프로젝트로 복원(+그 프로젝트로 이동해 표시)
   });
 }
 // 부활: done → 다시 보드로 (state Todo), deleted → archive에서 꺼내 복원. targetProject 주면 그 프로젝트로 이동.
@@ -1408,7 +1409,6 @@ function renderSidebar(){
     b.addEventListener('dragstart',e=>{ if(_dragRevive) return; _dragProj=b.dataset.p; e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain','proj');}catch(_){}; });
     b.addEventListener('dragend',()=>{ _dragProj=null; });
     b.addEventListener('dragover',e=>{
-      if(_dragRevive){ e.preventDefault(); b.classList.add('pdrop'); return; }        // 완료함 부활 = 항상 nest
       if(_dragProj && _dragProj!==b.dataset.p){ e.preventDefault();
         const r=b.getBoundingClientRect(), y=e.clientY-r.top;
         _dropZone = y < r.height*0.30 ? 'before' : y > r.height*0.70 ? 'after' : 'nest';   // 가장자리=순서, 중앙=하위
@@ -1419,7 +1419,6 @@ function renderSidebar(){
     });
     b.addEventListener('dragleave',()=>b.classList.remove('pdrop','dropbefore','dropafter'));
     b.addEventListener('drop',e=>{ e.preventDefault(); const z=_dropZone; b.classList.remove('pdrop','dropbefore','dropafter');
-      if(_dragRevive){ reviveDrop(b.dataset.p); return; }
       if(_dragProj){ const c=_dragProj; _dragProj=null;
         if(z==='before') reorderProject(c, b.dataset.p, true);
         else if(z==='after') reorderProject(c, b.dataset.p, false);
