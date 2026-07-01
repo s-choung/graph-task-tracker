@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graph Task Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.1.4/dist/dagre.min.js"></script>
+<style>
+:root{
+  --white:#ffffff;
+  --bg:#f7f8fa;
+  --ink:#1c2840;
+  --ink-soft:#5b6678;
+  --line:#e6e8ec;
+  --line-strong:#d4d8df;
+  --blue:#407ff2;
+  --green:#075a39;
+  --red:#772322;
+  --amber:#b45309;
+  --purple:#7c5cd6;
+  --orange:#d97706;
+  --sidebar-w:210px;
+  --radius:8px;
+  --shadow:rgba(28,40,64,.10) 0 2px 3px -2px, rgba(28,40,64,.08) 0 4px 12px -4px;
+  --font-ui:'Inter',system-ui,-apple-system,sans-serif;
+  --font-disp:'Newsreader',serif;
+  /* edge colors */
+  --e-next:#9aa3b2;
+  --e-success:#1f9d57;
+  --e-fail:#d24b47;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font-ui);color:var(--ink);background:var(--bg);overflow:hidden;-webkit-font-smoothing:antialiased}
+
+/* ---------- top bar ---------- */
+.topbar{
+  height:54px;display:flex;align-items:center;gap:14px;padding:0 18px;
+  background:var(--white);border-bottom:1px solid var(--line);position:relative;z-index:30}
+.brand{font-family:var(--font-disp);font-size:19px;font-weight:500;letter-spacing:-.2px}
+.brand small{font-family:var(--font-ui);font-size:11px;color:var(--ink-soft);font-weight:500;margin-left:6px;text-transform:uppercase;letter-spacing:.5px}
+.sel{height:32px;border:1px solid var(--line-strong);border-radius:7px;background:var(--white);
+  padding:0 28px 0 11px;font-family:var(--font-ui);font-size:13px;color:var(--ink);font-weight:500;cursor:pointer;
+  appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%235b6678' stroke-width='1.5' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center}
+.spacer{flex:1}
+.pagenav{display:flex;gap:1px;margin-left:4px}
+.pagenav a{font-size:11.5px;font-weight:600;color:var(--ink-soft);text-decoration:none;padding:5px 8px;border-radius:7px;white-space:nowrap}
+.pagenav a:hover{background:var(--bg);color:var(--ink)}
+.pagenav a.cur{color:var(--ink);background:var(--bg)}
+.toggle{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:2px}
+.toggle button{border:0;background:transparent;font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--ink-soft);
+  padding:5px 14px;border-radius:6px;cursor:pointer}
+.toggle button.on{background:var(--white);color:var(--ink);box-shadow:var(--shadow)}
+.btn{height:32px;border:1px solid var(--line-strong);border-radius:7px;background:var(--white);
+  font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--ink);padding:0 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--bg)}
+.btn.ghost{color:var(--ink-soft);border-color:var(--line)}
+.btn.ghost.on{background:#eef3fe;color:var(--blue);border-color:#cddcfb}
+.btn.save{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn.save:hover{background:#2f6fe0}
+.btn.authdot{min-width:38px;justify-content:center}
+.btn.authdot.on{background:var(--green);color:#fff;border-color:var(--green)}
+.auth-gate{position:fixed;inset:0;z-index:500;background:rgba(255,255,255,.97);display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+.auth-gate .ttl{font-family:var(--font-disp);font-size:22px;font-weight:500}
+.auth-gate .sub{font-size:13px;color:var(--ink-soft)}
+.auth-gate form{display:flex;flex-direction:column;gap:10px;width:260px}
+.auth-gate input{padding:10px 12px;border:1px solid var(--line-strong);border-radius:8px;font-size:14px;font-family:var(--font-ui)}
+.auth-gate button[type=submit]{padding:10px;border-radius:8px;border:none;background:var(--ink);color:#fff;font-weight:600;cursor:pointer;font-family:var(--font-ui)}
+.gate-err{color:#c0392b;font-size:13px;min-height:16px}
+.gate-close{background:none;border:none;color:#888;cursor:pointer;font-size:13px;text-decoration:underline}
+.toast{position:fixed;bottom:52px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;
+  padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:600;box-shadow:rgba(28,40,64,.25) 0 6px 20px -6px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ---------- canvas ---------- */
+#viewport{position:absolute;inset:54px 0 0 var(--sidebar-w);overflow:hidden;cursor:default;transition:left .18s ease;
+  background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px}
+#viewport.panning{cursor:grabbing}
+#world{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+#edges{position:absolute;top:0;left:0;overflow:visible}
+#nodes{position:absolute;top:0;left:0}
+#edgeUI{position:absolute;top:0;left:0;pointer-events:none}
+
+/* ---------- node card ---------- */
+.node{position:absolute;width:212px;background:var(--white);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow);cursor:grab;user-select:none;
+  transition:box-shadow .12s,border-color .12s}
+.node:hover{border-color:var(--line-strong)}
+/* state-based box color (kept before .urgent/.nsel so their borders win) */
+.node.st-todo{background:#f1f3f5}
+.node.st-ideas{background:#faf8ff}
+.node.st-inprogress{background:#fffdf5}
+.node.st-done{background:#edf6f0;border-color:#cfe6d7;opacity:.74}
+.node.st-done .title{text-decoration:line-through;color:var(--ink-soft)}
+.node.st-canceled{background:#f4f4f5;opacity:.5}
+.node.st-canceled .title{text-decoration:line-through;color:var(--ink-soft)}
+.statedot.click{cursor:pointer}
+.statedot.click:hover{box-shadow:0 0 0 3px rgba(28,40,64,.10)}
+.node.dragging{cursor:grabbing;box-shadow:rgba(28,40,64,.18) 0 8px 24px -6px;z-index:5}
+.node.urgent{border-color:#e7b3b1;box-shadow:0 0 0 3px rgba(215,75,71,.13),var(--shadow)}
+.node.nsel{border-color:var(--blue);box-shadow:0 0 0 3px rgba(64,127,242,.18),var(--shadow)}
+.node .body{padding:11px 12px 10px}
+.node .top{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.node .id{font-size:11px;color:var(--ink-soft);font-weight:600;font-variant-numeric:tabular-nums}
+.node .title{font-size:13.5px;font-weight:600;line-height:1.35;color:var(--ink);word-break:break-word}
+.node .title[contenteditable]{outline:none}
+.node .title[contenteditable]:focus{box-shadow:0 1px 0 var(--blue)}
+.node .meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px}
+.statedot{width:7px;height:7px;border-radius:50%;flex:none}
+.statelbl{font-size:11px;font-weight:600;color:var(--ink-soft)}
+.chip{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:5px;
+  font-size:10.5px;font-weight:600;background:var(--bg);color:var(--ink-soft);border:1px solid var(--line)}
+.due{font-size:11px;font-weight:600;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.due.over{color:var(--e-fail)}
+.due.soon{color:var(--orange)}
+.avatars{display:flex;align-items:center;gap:-4px;margin-left:auto}
+.av{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:9.5px;font-weight:700;color:#fff;border:1.5px solid #fff;margin-left:-6px}
+.av:first-child{margin-left:0}
+.av.me{background:var(--blue)}
+.av.internal{background:#64748b}
+.av.external{background:var(--amber)}
+/* priority icon */
+.pri{display:inline-flex;align-items:flex-end;gap:1.5px;height:11px}
+.pri i{width:3px;border-radius:1px;background:#d9dde3;display:block}
+.pri i.f{background:var(--e-fail)}
+.pri i:nth-child(1){height:5px}.pri i:nth-child(2){height:8px}.pri i:nth-child(3){height:11px}
+.pri.urg{width:13px;height:13px;border-radius:3px;background:var(--e-fail);color:#fff;
+  align-items:center;justify-content:center;font-size:10px;font-weight:800;line-height:1}
+.subcount{font-size:10.5px;font-weight:600;color:var(--ink-soft);display:inline-flex;align-items:center;gap:3px}
+
+/* node handle (drag-to-connect) */
+.handle{position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;
+  background:var(--white);border:2px solid var(--line-strong);cursor:crosshair;opacity:0;transition:opacity .12s}
+.node:hover .handle{opacity:1}
+.handle.handle-l{right:auto;left:-7px}
+.handle:hover{border-color:var(--blue);background:#eaf1fe}
+
+/* ---------- edge pill ---------- */
+.epill{position:absolute;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:0;
+  height:18px;padding:0 8px;border-radius:9px;font-size:10px;font-weight:700;color:#fff;cursor:pointer;
+  pointer-events:none;opacity:0;transition:opacity .12s;white-space:nowrap;box-shadow:rgba(28,40,64,.18) 0 1px 4px -1px}
+.epill.show{opacity:1;pointer-events:auto}
+.epill.next{background:var(--e-next)}
+.epill.success{background:var(--e-success)}
+.epill.fail{background:var(--e-fail)}
+.epill.sub{background:#8aa0c0}
+.epill .x{display:none;margin-left:5px;opacity:.85;font-weight:800}
+.epill.esel{box-shadow:0 0 0 2px rgba(64,127,242,.55),rgba(28,40,64,.18) 0 1px 4px -1px}
+.ehandle{position:absolute;transform:translate(-50%,-50%);width:13px;height:13px;border-radius:50%;
+  background:#fff;border:2.5px solid var(--blue);cursor:grab;pointer-events:auto;z-index:7;
+  box-shadow:rgba(28,40,64,.22) 0 1px 5px -1px}
+.ehandle:hover{background:#eaf1fe}
+.due.add{color:var(--ink-soft);background:var(--bg);border:1px dashed var(--line-strong);border-radius:5px;
+  padding:0 6px;height:18px;display:inline-flex;align-items:center;cursor:pointer}
+.due:not(.add){cursor:pointer}
+.due:not(.add):hover{text-decoration:underline}
+.eta{font-size:10.5px;font-weight:600;color:var(--ink-soft);background:var(--bg);border:1px solid var(--line);
+  border-radius:5px;padding:0 5px;height:18px;display:inline-flex;align-items:center;cursor:pointer}
+.eta.set{color:var(--ink);border-color:var(--line-strong)}
+.eta:hover{border-color:var(--blue);color:var(--blue)}
+.epill:hover .x{display:inline}
+
+/* ---------- context menu ---------- */
+.menu{position:fixed;z-index:60;background:var(--white);border:1px solid var(--line-strong);border-radius:9px;
+  box-shadow:rgba(28,40,64,.20) 0 8px 28px -6px;padding:5px;min-width:172px;display:none}
+.menu button{display:flex;width:100%;align-items:center;gap:9px;border:0;background:transparent;text-align:left;
+  font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--ink);padding:7px 9px;border-radius:6px;cursor:pointer}
+.menu button:hover{background:var(--bg)}
+.menu button.danger{color:var(--e-fail)}
+.menu .sep{height:1px;background:var(--line);margin:4px 2px}
+.menu .mlabel{font-size:10.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px;padding:5px 9px 3px}
+
+/* ---------- side panel ---------- */
+#panel{position:absolute;top:54px;right:0;bottom:0;width:340px;background:var(--white);
+  border-left:1px solid var(--line);box-shadow:rgba(28,40,64,.10) -8px 0 24px -12px;
+  transform:translateX(100%);transition:transform .18s ease;z-index:40;display:flex;flex-direction:column}
+#panel.open{transform:translateX(0)}
+.ph{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.ph .pid{font-size:11px;font-weight:700;color:var(--ink-soft)}
+.ph .close{margin-left:auto;border:0;background:transparent;cursor:pointer;color:var(--ink-soft);font-size:18px;line-height:1;padding:2px 6px;border-radius:6px}
+.ph .close:hover{background:var(--bg)}
+.pbody{padding:16px;overflow:auto;flex:1}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.field input,.field textarea,.field select{width:100%;border:1px solid var(--line-strong);border-radius:7px;
+  font-family:var(--font-ui);font-size:13px;color:var(--ink);padding:7px 9px;background:var(--white)}
+.field textarea{resize:vertical;min-height:54px}
+.row2{display:flex;gap:10px}.row2>*{flex:1}
+.subhdr{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px;margin:6px 0 8px}
+.subitem{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;margin-bottom:6px;background:var(--bg)}
+.subitem .st{width:7px;height:7px;border-radius:50%;flex:none}
+.subitem .t{font-size:12.5px;font-weight:500;flex:1}
+.subitem .s{font-size:10.5px;font-weight:600;color:var(--ink-soft)}
+.empty{font-size:12px;color:var(--ink-soft);padding:8px 0}
+.assignees-edit{display:flex;flex-wrap:wrap;gap:0;margin-bottom:4px}
+.achip{display:inline-flex;align-items:center;gap:5px;height:25px;padding:0 5px 0 8px;border-radius:6px;margin:0 5px 5px 0;
+  font-size:11.5px;font-weight:600;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.achip .adot{width:7px;height:7px;border-radius:50%;flex:none}
+.achip .adot.me{background:var(--blue)}.achip .adot.internal{background:#64748b}.achip .adot.external{background:var(--amber)}
+.achip .atype{font-size:10px;color:var(--ink-soft);background:var(--white);border:1px solid var(--line);border-radius:4px;padding:1px 5px;cursor:pointer}
+.achip .atype:hover{color:var(--blue);border-color:var(--blue)}
+.achip .ax{cursor:pointer;color:var(--ink-soft);font-size:10px;padding:0 3px;border-radius:3px}
+.achip .ax:hover{color:var(--e-fail);background:#f4eaea}
+.mini-sel{height:30px;width:100%;border:1px dashed var(--line-strong);border-radius:7px;background:var(--white);
+  font-family:var(--font-ui);font-size:12.5px;color:var(--ink-soft);padding:0 9px;cursor:pointer}
+
+/* ---------- list view ---------- */
+#listview{position:absolute;inset:54px 0 0 var(--sidebar-w);overflow:auto;display:none;padding:20px 24px;background:var(--bg);transition:left .18s ease}
+.lcols{display:flex;gap:18px;align-items:flex-start;min-width:max-content}
+.lcol{width:280px;flex:none}
+.lcol h3{font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.lcol h3 .ct{background:var(--white);border:1px solid var(--line);border-radius:20px;padding:1px 7px;font-size:10.5px}
+.lcard{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:11px 12px;margin-bottom:9px;cursor:pointer}
+.lcard:hover{border-color:var(--line-strong)}
+.lcard.urgent{border-color:#e7b3b1;box-shadow:0 0 0 2px rgba(215,75,71,.10),var(--shadow)}
+.lcard .lt{font-size:13px;font-weight:600;line-height:1.35;margin-bottom:8px}
+
+/* legend / hint */
+.legend{position:absolute;left:16px;bottom:14px;z-index:20;background:var(--white);border:1px solid var(--line);
+  border-radius:9px;box-shadow:var(--shadow);padding:9px 12px;font-size:11px;color:var(--ink-soft);display:flex;gap:14px;align-items:center}
+.legend b{color:var(--ink)}
+.lg{display:inline-flex;align-items:center;gap:5px;font-weight:600}
+.lg i{width:16px;height:3px;border-radius:2px;display:block}
+.hint{position:absolute;right:16px;bottom:14px;z-index:20;background:rgba(28,40,64,.86);color:#fff;
+  border-radius:9px;padding:8px 12px;font-size:11px;font-weight:500;line-height:1.5;max-width:230px}
+.hint kbd{background:rgba(255,255,255,.2);border-radius:4px;padding:1px 5px;font-family:var(--font-ui);font-weight:700;font-size:10.5px}
+.zoombadge{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:20;background:var(--white);
+  border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);font-size:11px;font-weight:600;color:var(--ink-soft);padding:5px 12px}
+
+/* ---------- left project sidebar ---------- */
+#sidebar{position:absolute;top:54px;left:0;bottom:0;width:var(--sidebar-w);background:var(--white);
+  border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:26;transition:transform .18s ease}
+body.sb-collapsed #sidebar{transform:translateX(-100%)}
+#sbResize{position:absolute;top:54px;bottom:0;left:calc(var(--sidebar-w) - 3px);width:7px;cursor:col-resize;z-index:28}
+#sbResize:hover,#sbResize.dragging{background:linear-gradient(90deg,transparent,rgba(64,127,242,.30),transparent)}
+body.sb-collapsed #sbResize{display:none}
+.sbhead{display:flex;align-items:center;gap:8px;padding:12px 14px 9px}
+.sbhead .t{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px}
+.sbhead .col{margin-left:auto;border:0;background:transparent;cursor:pointer;color:var(--ink-soft);font-size:17px;line-height:1;padding:2px 7px;border-radius:6px}
+.sbhead .col:hover{background:var(--bg);color:var(--ink)}
+#projList{flex:1;overflow:auto;padding:7px 8px 4px}
+.pgroup{margin-bottom:10px}
+.pglabel{font-size:10px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 5px}
+.pitem{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;cursor:pointer;
+  padding:7px 9px;border-radius:7px;text-align:left;font-family:var(--font-ui);color:var(--ink)}
+.pitem:hover{background:var(--bg)}
+.pitem.on{background:#eef3fe}
+.pitem.on .pname{color:var(--blue)}
+.pname{flex:1;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcount{font-size:10.5px;font-weight:700;color:var(--ink-soft);background:var(--bg);border:1px solid var(--line);
+  border-radius:20px;padding:1px 7px;min-width:22px;text-align:center;flex:none}
+.pitem.on .pcount{background:#fff;border-color:#cddcfb;color:var(--blue)}
+.sbfoot{padding:8px;border-top:1px solid var(--line)}
+.pnew{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;border:1px dashed var(--line-strong);
+  background:var(--white);border-radius:7px;padding:8px;margin-top:2px;font-family:var(--font-ui);font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer}
+.pnew:hover{border-color:var(--blue);color:var(--blue)}
+/* inline rename (contenteditable name) + inline new-project row */
+.pname[contenteditable]{outline:none;overflow:visible;text-overflow:clip;cursor:text;box-shadow:0 1px 0 var(--blue);color:var(--ink)}
+.pnewrow{padding:2px 9px 4px}
+.prename{width:100%;font-size:13px;font-weight:600;font-family:var(--font-ui);color:var(--ink);
+  border:1px solid var(--blue);border-radius:6px;padding:5px 8px;background:#fff;outline:none}
+.pnum{font-size:10px;font-weight:700;color:var(--ink-soft);font-variant-numeric:tabular-nums;opacity:.65;flex:none;min-width:22px}
+.pitem.on .pnum{color:var(--blue);opacity:.9}
+.pcaret{color:var(--line-strong);font-size:11px;flex:none;margin-right:-3px}
+.pcaret2{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:none;font-size:11px;font-weight:700;color:var(--ink-soft);cursor:pointer;border-radius:5px;line-height:1;border:1px solid transparent}
+.pcaret2:hover{background:var(--bg);border-color:var(--line);color:var(--blue)}
+.pcaret2.empty{cursor:default;pointer-events:none}
+.pcaret2.pfolder{font-size:12.5px;font-weight:400;border-color:transparent}
+.pcaret2.pfolder:hover{background:var(--bg)}
+.pitem.pdrop{outline:2px solid var(--blue);outline-offset:-2px;background:#eef3fe}
+.pitem.dropbefore{box-shadow:inset 0 3px 0 var(--blue)}
+.pitem.dropafter{box-shadow:inset 0 -3px 0 var(--blue)}
+.drow[draggable]{cursor:grab}
+.drow.dragging{opacity:.5}
+/* rubber-band marquee select */
+.marquee{position:absolute;z-index:15;border:1px solid var(--blue);background:rgba(64,127,242,.10);pointer-events:none;border-radius:2px}
+#viewport.panning{cursor:grabbing}
+
+/* ---------- project bar (top-left of canvas): #num · name · collaborators ---------- */
+#projBar{position:absolute;left:14px;top:12px;z-index:20;display:flex;align-items:center;gap:7px;flex-wrap:wrap;row-gap:5px;
+  background:var(--white);border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);padding:6px 11px;max-width:calc(100% - 32px)}
+body.sb-collapsed #projBar{left:14px}
+.pb-num{font-size:11px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums;background:#eef3fe;border:1px solid #cddcfb;border-radius:6px;padding:1px 6px}
+.pb-name{font-size:14px;font-weight:500;color:var(--ink);font-family:var(--font-disp)}
+.pb-sep{color:var(--line-strong)}
+.pb-people{display:flex;align-items:center;gap:5px;flex-wrap:wrap;row-gap:5px}
+.pbchip{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 4px 0 8px;border-radius:6px;
+  font-size:10px;font-weight:600;background:var(--bg);color:var(--ink-soft);border:1px solid var(--line)}
+.pbchip .x{cursor:pointer;color:var(--ink-soft);font-size:9px;padding:0 2px;border-radius:3px}
+.pbchip .x:hover{color:var(--e-fail);background:#f4eaea}
+.pbadd{border:1px dashed var(--line-strong);background:var(--white);border-radius:6px;height:20px;padding:0 7px;
+  font-family:var(--font-ui);font-size:10px;font-weight:600;color:var(--ink-soft);cursor:pointer}
+.pbadd:hover{border-color:var(--blue);color:var(--blue)}
+.pbinput{height:20px;border:1px solid var(--blue);border-radius:6px;padding:0 6px;font-size:10.5px;font-family:var(--font-ui);outline:none;width:84px}
+
+/* ---------- done / archive view ---------- */
+#doneview{position:absolute;inset:54px 0 0 var(--sidebar-w);overflow:auto;display:none;background:var(--bg);z-index:35;transition:left .18s ease}
+.dwrap{max-width:840px;margin:0 auto;padding:22px 24px 60px}
+.dhead{display:flex;align-items:baseline;gap:10px;margin-bottom:16px}
+.dhead h2{font-family:var(--font-disp);font-size:22px;font-weight:500}
+.dhead .dsub{font-size:12.5px;color:var(--ink-soft)}
+.dhead .close{margin-left:auto;align-self:center;border:1px solid var(--line-strong);background:var(--white);border-radius:7px;width:30px;height:30px;cursor:pointer;color:var(--ink-soft);font-size:14px}
+.dhead .close:hover{color:var(--ink)}
+.dgrouplbl{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px;margin:14px 2px 8px}
+.drow{display:flex;align-items:center;gap:12px;background:var(--white);border:1px solid var(--line);border-radius:9px;padding:10px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+.dtag{flex:none;font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px}
+.dtag.done{background:#edf6f0;color:var(--green);border:1px solid #cfe6d7}
+.dtag.deleted{background:#f4f4f5;color:var(--ink-soft);border:1px solid var(--line-strong)}
+.dmain{flex:1;min-width:0}
+.dtitle{font-size:13.5px;font-weight:600;color:var(--ink);word-break:break-word}
+.ddesc{font-size:12px;color:var(--ink-soft);margin-top:3px;white-space:pre-wrap;word-break:break-word}
+.dproj{flex:none;font-size:11.5px;font-weight:600;color:var(--ink-soft);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 7px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ddate{flex:none;font-size:11.5px;font-weight:600;color:var(--ink-soft);font-variant-numeric:tabular-nums;min-width:84px;text-align:right}
+.drestore{flex:none;border:1px solid var(--line-strong);background:var(--white);border-radius:6px;padding:4px 10px;font-family:var(--font-ui);font-size:11.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.drestore:hover{border-color:var(--blue);color:var(--blue)}
+
+/* ---------- parent overview (subproject sections) ---------- */
+.loverview{padding:2px 2px 40px}
+.lov-title{font-family:var(--font-disp);font-size:20px;font-weight:500;margin:2px 4px 16px}
+.lov-title .lov-sub{font-family:var(--font-ui);font-size:12.5px;color:var(--ink-soft);font-weight:500}
+.lsection{margin-bottom:22px}
+.lsec-head{display:flex;align-items:center;gap:9px;padding:8px 11px;margin-bottom:11px;background:var(--white);
+  border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);cursor:pointer}
+.lsec-head:hover{border-color:var(--line-strong)}
+.lsec-head:hover .lsec-go{color:var(--blue)}
+.lsec-head .pnum{min-width:24px}
+.lsec-name{font-size:14px;font-weight:700;color:var(--ink)}
+.lsec-tag{font-size:10px;font-weight:700;color:var(--ink-soft);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.lsec-ct{font-size:11px;font-weight:700;color:var(--ink-soft);background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:1px 8px}
+.lsec-go{margin-left:auto;font-size:11.5px;font-weight:600;color:var(--ink-soft)}
+.lsec-empty{font-size:12px;color:var(--ink-soft);padding:2px 6px 8px}
+#sbReopen{position:absolute;top:62px;left:12px;z-index:27;display:none;width:34px;height:34px;border-radius:8px;
+  border:1px solid var(--line-strong);background:var(--white);box-shadow:var(--shadow);cursor:pointer;font-size:15px;color:var(--ink-soft)}
+#sbReopen:hover{color:var(--ink);background:var(--bg)}
+body.sb-collapsed #sbReopen{display:block}
+
+/* ---------- text (note) node ---------- */
+.node.tnode{width:auto;min-width:120px;max-width:280px;background:#fffdf3;border:1px solid #e7dfc4;
+  box-shadow:var(--shadow);cursor:grab}
+.node.tnode:hover{border-color:#d9cfa6}
+.node.tnode.nsel{border-color:var(--blue)}
+.node.tnode .tbody{padding:9px 11px;font-size:13px;line-height:1.45;color:var(--ink);
+  white-space:pre-wrap;word-break:break-word;min-height:19px}
+.node.tnode .tbody:empty::before{content:'텍스트';color:var(--ink-soft)}
+.node.tnode .tbody[contenteditable]{outline:none}
+.node.tnode .handle{background:var(--white);border-color:#d9cfa6}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Graph Task<small>tracker</small></div>
+  <nav class="pagenav">
+    <a href="https://github.com/s-choung/graph-task-tracker" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+  <div class="spacer"></div>
+  <div class="toggle" id="viewToggle">
+    <button data-v="graph" class="on">그래프</button>
+    <button data-v="list">리스트</button>
+  </div>
+  <button class="btn ghost" id="btnArrange" title="dagre 자동배치로 정렬">↹ 정렬</button>
+  <button class="btn ghost" id="btnDone" title="완료·삭제한 항목 모아보기">🗂 완료함</button>
+  <button class="btn save" id="btnSave" title="저장 (Cmd+S) · 브라우저 localStorage">Save</button>
+</div>
+
+<aside id="sidebar">
+  <div class="sbhead"><span class="t">프로젝트</span>
+    <button class="col" id="sbCollapse" title="패널 접기">‹</button></div>
+  <div id="projList"></div>
+</aside>
+<div id="sbResize" title="드래그해서 폭 조절"></div>
+<button id="sbReopen" title="프로젝트 패널 열기">≡</button>
+
+<div id="viewport">
+  <div id="world">
+    <svg id="edges"></svg>
+    <div id="nodes"></div>
+    <div id="edgeUI"></div>
+  </div>
+  <div id="projBar"></div>
+  <div class="legend">
+    <span class="lg"><i style="background:var(--e-next)"></i>다음</span>
+    <span class="lg"><i style="background:var(--e-success)"></i>성공</span>
+    <span class="lg"><i style="background:var(--e-fail)"></i>실패</span>
+    <span style="opacity:.5">·</span>
+    <span><b>긴급</b> = 빨강 링</span>
+  </div>
+  <div class="zoombadge" id="zoomBadge">100%</div>
+</div>
+
+<div id="listview"></div>
+<div id="doneview"></div>
+
+<aside id="panel">
+  <div class="ph">
+    <span class="pid" id="pPid"></span>
+    <span class="statelbl" id="pState"></span>
+    <button class="close" id="pClose">✕</button>
+  </div>
+  <div class="pbody" id="pBody"></div>
+</aside>
+
+<div class="menu" id="ctxMenu"></div>
+
+<div class="toast" id="toast">저장됨</div>
+
+<script src="demo-data.js"></script>
+<script>
+"use strict";
+/* =========================================================================
+   Flow Dashboard — graph + list view over chained jobs.
+   Nodes reuse the live dashboard task schema; edges are a separate typed array.
+   ========================================================================= */
+
+const TODAY = new Date('2026-06-30T00:00:00'); // fixed for a deterministic demo
+const THRESHOLD = 170;   // px (world units) for proximity auto-connect
+const NODE_W = 212;
+
+const STATE = {
+  Ideas:       {color:'#7c5cd6', label:'Ideas'},
+  Todo:        {color:'#407ff2', label:'Todo'},
+  'In Progress':{color:'#f59e0b', label:'In Progress'},
+  Done:        {color:'#075a39', label:'Done'},
+  Canceled:    {color:'#9aa3b2', label:'Canceled'},
+};
+const STATE_ORDER = ['Ideas','Todo','In Progress','Done','Canceled'];
+// stamp/clear the completion time so 완료함 can show "언제 끝냈는지"
+function stampDone(n){ if(!n) return; if(n.state==='Done'){ if(!n.doneAt) n.doneAt=new Date().toISOString(); } else { n.doneAt=null; } }
+
+// ---- persistence ----------------------------------------------------------
+const LS = {nodes:'gdash-nodes', edges:'gdash-edges', pos:'gdash-pos', ver:'gdash-seedver', xproj:'gdash-xproj', hidden:'gdash-hidden', pmeta:'gdash-pmeta', pseq:'gdash-pseq', arch:'gdash-arch'};
+let sbClient=null, currentUser=null, _syncTimer=null;
+function load(){
+  // if the seed file changed (new version), start fresh from it instead of stale localStorage
+  if(localStorage.getItem(LS.ver) !== (SEED.version||'')){
+    ['nodes','edges','pos','xproj','hidden','pmeta','pseq','arch'].forEach(k=>localStorage.removeItem(LS[k]));
+    localStorage.removeItem('gdash-seeded-subproj'); localStorage.removeItem('gdash-seeded-tops'); localStorage.removeItem('gdash-seeded-hier');
+    localStorage.setItem(LS.ver, SEED.version||'');
+    return { nodes: structuredClone(SEED.nodes), edges: structuredClone(SEED.edges), pos:{}, extraProjects:[], hidden:[], projectMeta:{}, projectSeq:1, archive:[], seeded:false };
+  }
+  let nodes, edges, pos, xproj, xhid, pmeta, pseq, arch;
+  try{ nodes = JSON.parse(localStorage.getItem(LS.nodes)); }catch(e){}
+  try{ edges = JSON.parse(localStorage.getItem(LS.edges)); }catch(e){}
+  try{ pos   = JSON.parse(localStorage.getItem(LS.pos)); }catch(e){}
+  try{ xproj = JSON.parse(localStorage.getItem(LS.xproj)); }catch(e){}
+  try{ xhid  = JSON.parse(localStorage.getItem(LS.hidden)); }catch(e){}
+  try{ pmeta = JSON.parse(localStorage.getItem(LS.pmeta)); }catch(e){}
+  try{ pseq  = JSON.parse(localStorage.getItem(LS.pseq)); }catch(e){}
+  try{ arch  = JSON.parse(localStorage.getItem(LS.arch)); }catch(e){}
+  return {
+    nodes: nodes || structuredClone(SEED.nodes),
+    edges: edges || structuredClone(SEED.edges),
+    pos:   pos   || {},   // {nodeId:{x,y}}  world top-left, manual overrides
+    extraProjects: xproj || [],   // manually-added project names (no seed/board origin)
+    hidden: xhid || [],   // seed/board project names that were renamed away (so the old name stops re-listing)
+    projectMeta: pmeta || {},   // {projectName:{num, people:[名], parent, ord}}
+    projectSeq: pseq || 1,      // next project number
+    archive: arch || [],        // [{at:ISO, node:{…}}] — deleted items log for 완료함
+    seeded: localStorage.getItem('gdash-seeded-subproj')==='1',   // one-time seeds+conversion already applied to THIS data
+  };
+}
+// ---- undo (Ctrl+Z) — snapshot the whole state before each meaningful action ----
+let undoStack=[], prevSnap=null, _undoMark=false;
+function snapshot(){ return JSON.stringify({nodes:db.nodes,edges:db.edges,pos:db.pos,extraProjects:db.extraProjects,hidden:db.hidden,projectMeta:db.projectMeta,projectSeq:db.projectSeq,archive:db.archive}); }
+function restoreSnap(s){ const d=JSON.parse(s);
+  db.nodes=d.nodes||[]; db.edges=d.edges||[]; db.pos=d.pos||{}; db.extraProjects=d.extraProjects||[];
+  db.hidden=d.hidden||[]; db.projectMeta=d.projectMeta||{}; db.projectSeq=d.projectSeq||1; db.archive=d.archive||[]; }
+function markUndo(){ _undoMark=true; }   // call BEFORE a mutation so the next persist records the pre-action state
+function saveLocal(){
+  localStorage.setItem(LS.nodes, JSON.stringify(db.nodes));
+  localStorage.setItem(LS.edges, JSON.stringify(db.edges));
+  localStorage.setItem(LS.pos, JSON.stringify(db.pos));
+  localStorage.setItem(LS.xproj, JSON.stringify(db.extraProjects||[]));
+  localStorage.setItem(LS.hidden, JSON.stringify(db.hidden||[]));
+  localStorage.setItem(LS.pmeta, JSON.stringify(db.projectMeta||{}));
+  localStorage.setItem(LS.pseq, JSON.stringify(db.projectSeq||1));
+  localStorage.setItem(LS.arch, JSON.stringify(db.archive||[]));
+  scheduleSync();
+}
+function persist(){
+  if(_undoMark && prevSnap!=null){ undoStack.push(prevSnap); if(undoStack.length>60) undoStack.shift(); }
+  _undoMark=false; prevSnap=snapshot();
+  saveLocal();
+}
+function undo(){
+  if(!undoStack.length){ showToast('되돌릴 작업 없음'); return; }
+  restoreSnap(undoStack.pop());
+  prevSnap=snapshot(); _undoMark=false; saveLocal();
+  selNodes.clear(); selectedId=null; if(panel.classList.contains('open')) panel.classList.remove('open');
+  if(!projectList().includes(project)) project=projectList()[0]||project;
+  ensureProjectMeta();
+  renderSidebar(); renderProjectBar();
+  if(doneOpen) renderDone(); else if(view==='list') renderList(); else layout();
+  showToast('되돌림 ⟲');
+}
+
+const SEED = window.SEED;
+const COLLAB_PROJECTS = new Set(SEED.projects);  // projects present before the Task Board merge → "Collab" group; the rest → "Tasks"
+// merge in the main Task Board (dashboard.schoung.com ISSUES). Only top-level tasks
+// (those without a `parent` — subtasks already live inside parent.children). null project → 기타.
+if(window.BOARD){
+  const have=new Set(SEED.nodes.map(n=>n.id));
+  window.BOARD.filter(t=>!t.parent && !have.has(t.id)).forEach(t=>{
+    const n=Object.assign({}, t);
+    n.project = n.project || '기타';
+    n.assignees = n.assignees || [];
+    SEED.nodes.push(n);
+    if(!SEED.projects.includes(n.project)) SEED.projects.push(n.project);
+  });
+}
+const PEOPLE = Object.fromEntries(SEED.people.map(p=>[p.id,p]));
+let db = load();
+prevSnap = snapshot();   // baseline for the first undo entry
+let project = SEED.projects[0];
+let view = 'graph';
+let selectedId = null;
+let selNodes = new Set();   // multi-selection of node ids (marquee / shift-click); drives the .nsel highlight
+let nextLocalNum = 900;
+
+// ---- view transform -------------------------------------------------------
+let tx=60, ty=40, k=1;
+const viewport = document.getElementById('viewport');
+const world = document.getElementById('world');
+const svg = document.getElementById('edges');
+const nodesLayer = document.getElementById('nodes');
+const edgeUI = document.getElementById('edgeUI');
+function applyTransform(){
+  world.style.transform = `translate(${tx}px,${ty}px) scale(${k})`;
+  document.getElementById('zoomBadge').textContent = Math.round(k*100)+'%';
+}
+function screenToWorld(sx,sy){
+  const r = viewport.getBoundingClientRect();
+  return { x:(sx-r.left-tx)/k, y:(sy-r.top-ty)/k };
+}
+
+// ---- helpers --------------------------------------------------------------
+const $ = (s,el=document)=>el.querySelector(s);
+const PL = {0:'No priority',1:'Urgent',2:'High',3:'Medium',4:'Low'};
+// done items leave the board (they live in 완료함); text notes stay but aren't counted
+function nodesOfProject(p){ return db.nodes.filter(n=>(n.project||'기타')===p && n.state!=='Done'); }
+function childrenOf(p){ return projectList().filter(c=>parentOf(c)===p && c!==p); }
+// a project + all its descendants (so a parent's graph aggregates every subproject's tasks)
+function subtreeProjects(p,seen){ seen=seen||new Set(); if(seen.has(p)) return []; seen.add(p); const out=[p]; childrenOf(p).forEach(c=>subtreeProjects(c,seen).forEach(x=>out.push(x))); return out; }
+function projectNodes(){ const ps=new Set(subtreeProjects(project)); return db.nodes.filter(n=>ps.has(n.project||'기타') && n.state!=='Done'); }
+function projectEdges(){
+  const ids=new Set(projectNodes().map(n=>n.id));
+  return db.edges.filter(e=>ids.has(e.from)&&ids.has(e.to));
+}
+function nodeById(id){ return db.nodes.find(n=>n.id===id); }
+function daysTo(due){ if(!due) return null; return Math.round((new Date(due+'T00:00:00')-TODAY)/86400000); }
+function urgency(n){
+  if(n.state==='Done'||n.state==='Canceled') return 'none';
+  const d = daysTo(n.due);
+  if(n.priority===1 || (d!==null && d<0)) return 'urgent';
+  if(d!==null && d<=3) return 'soon';
+  return 'none';
+}
+function fmtDue(due){
+  const d = daysTo(due);
+  if(d===null) return '';
+  if(d<0)  return `${-d}일 지남`;
+  if(d===0) return '오늘';
+  if(d===1) return '내일';
+  return `${d}일 후`;
+}
+function priHtml(p){
+  if(p===1) return `<span class="pri urg">!</span>`;
+  if(p===0) return '';
+  const fills = p===2?3 : p===3?2 : 1;
+  let s='<span class="pri">';
+  for(let i=1;i<=3;i++) s+=`<i class="${i<=fills?'f':''}"></i>`;
+  return s+'</span>';
+}
+function avatarsHtml(assignees){
+  if(!assignees||!assignees.length) return '';
+  let s='<span class="avatars">';
+  assignees.slice(0,3).forEach(a=>{
+    const p=PEOPLE[a.id]; if(!p) return;
+    const init=p.name.slice(-2);
+    s+=`<span class="av ${p.group}" title="${p.name} · ${a.type}">${init}</span>`;
+  });
+  return s+'</span>';
+}
+
+/* =========================================================================
+   LAYOUT (dagre) + RENDER
+   ========================================================================= */
+let sizes = {}; // measured node sizes {id:{w,h}}
+
+function buildTextEl(n){
+  const el = document.createElement('div');
+  el.className = 'node tnode'+(selNodes.has(n.id)?' nsel':'');
+  el.dataset.id = n.id;
+  el.innerHTML = `
+    <div class="tbody" data-role="title">${escapeHtml(n.text||'')}</div>
+    <div class="handle handle-l" data-role="handle-l"></div>
+    <div class="handle" data-role="handle"></div>`;
+  return el;
+}
+function buildNodeEl(n){
+  if(n.kind==='text') return buildTextEl(n);
+  const u = urgency(n);
+  const st = STATE[n.state]||STATE.Todo;
+  const el = document.createElement('div');
+  const stSlug=(n.state||'Todo').toLowerCase().replace(/\s+/g,'');
+  el.className = 'node st-'+stSlug+(u==='urgent'?' urgent':'')+(selNodes.has(n.id)?' nsel':'');
+  el.dataset.id = n.id;
+  const dueCls = n.due ? (u==='urgent'?'over':u==='soon'?'soon':'') : 'add';
+  const dueTxt = n.due ? fmtDue(n.due) : '＋ 마감';
+  const subs = (n.children&&n.children.length)
+    ? `<span class="subcount" data-role="subs" title="서브태스크 박스로 펼치기">⌗ ${n.children.length}</span>` : '';
+  el.innerHTML = `
+    <div class="body">
+      <div class="top">
+        ${priHtml(n.priority)}
+        <span class="id">${dispId(n.id)}</span>
+        ${avatarsHtml(n.assignees)}
+      </div>
+      <div class="title" data-role="title">${escapeHtml(n.title||'새 작업')}</div>
+      <div class="meta">
+        <span class="statedot click" data-role="state" style="background:${st.color}" title="${st.label} (클릭해 변경)"></span>
+        <span class="due ${dueCls}" data-role="due">${dueTxt}</span>
+        <span class="eta ${n.eta?'set':''}" data-role="eta" title="걸리는 시간 (클릭해 변경)">${n.eta?'⏱ '+n.eta:'⏱'}</span>
+        ${subs}
+      </div>
+    </div>
+    <div class="handle handle-l" data-role="handle-l"></div>
+    <div class="handle" data-role="handle"></div>`;
+  return el;
+}
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function dispId(id){ if(SEED.codes&&SEED.codes[id]) return SEED.codes[id]; const s=id.replace(/^SEA-/,'#').replace(/^W-/,''); return s[0]==='#'?s:s.charAt(0).toUpperCase()+s.slice(1); }
+// 걸리는 시간(effort) cycle: none → 30m → 1h → 1.5h → … → 1w → none
+const ETA_STEPS=['30m','1h','1.5h','2h','3h','4h','1d','2d','1w'];
+function nextEta(cur){ const i=ETA_STEPS.indexOf(cur); return i<0?ETA_STEPS[0]:(i===ETA_STEPS.length-1?null:ETA_STEPS[i+1]); }
+
+function layout(){
+  const ns = projectNodes();
+  const es = projectEdges();
+  // render node els first so we can measure real sizes
+  nodesLayer.innerHTML='';
+  const els={};
+  ns.forEach(n=>{ const el=buildNodeEl(n); el.style.left='0px'; el.style.top='-9999px'; nodesLayer.appendChild(el); els[n.id]=el; });
+  sizes={};
+  ns.forEach(n=>{ sizes[n.id]={w:els[n.id].offsetWidth||NODE_W, h:els[n.id].offsetHeight||120}; });
+
+  // dagre lays out CONNECTED nodes (those in an edge) that aren't manually pinned.
+  const inEdge=new Set(); es.forEach(e=>{ inEdge.add(e.from); inEdge.add(e.to); });
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({rankdir:'LR', nodesep:16, ranksep:18, marginx:12, marginy:12});
+  g.setDefaultEdgeLabel(()=>({}));
+  ns.forEach(n=>{ if(inEdge.has(n.id) && !db.pos[n.id]) g.setNode(n.id,{width:sizes[n.id].w,height:sizes[n.id].h}); });
+  es.forEach(e=>{ if(g.hasNode(e.from)&&g.hasNode(e.to)) g.setEdge(e.from,e.to); });
+  dagre.layout(g);
+
+  let maxBottom=12;
+  ns.forEach(n=>{
+    if(db.pos[n.id]){ n._x=db.pos[n.id].x; n._y=db.pos[n.id].y; }
+    else if(g.hasNode(n.id)){ const gn=g.node(n.id); n._x=gn.x-sizes[n.id].w/2; n._y=gn.y-sizes[n.id].h/2; }
+    else return;
+    maxBottom=Math.max(maxBottom, n._y+sizes[n.id].h);
+  });
+
+  // isolated (edge-less, unpinned) nodes → tidy grid instead of one tall column
+  const iso=ns.filter(n=>!db.pos[n.id] && !g.hasNode(n.id));
+  if(iso.length){
+    const cols=Math.min(5, Math.max(1, Math.round(Math.sqrt(iso.length*1.4))));
+    const colW=NODE_W+22, rowH=Math.max(...iso.map(n=>sizes[n.id].h))+20;
+    const anyPlaced=ns.some(n=>g.hasNode(n.id)||db.pos[n.id]);
+    const startY=anyPlaced ? maxBottom+40 : 12;
+    iso.forEach((n,i)=>{ n._x=12+(i%cols)*colW; n._y=startY+Math.floor(i/cols)*rowH; });
+  }
+
+  ns.forEach(n=>{ const el=els[n.id]; el.style.left=n._x+'px'; el.style.top=n._y+'px'; });
+  renderEdges();
+  wireNodeEvents();
+}
+
+function anchorOut(n){ return {x:n._x+sizes[n.id].w, y:n._y+sizes[n.id].h/2}; }
+function anchorIn(n){ return {x:n._x, y:n._y+sizes[n.id].h/2}; }
+function bezier(a,b){
+  const dx=Math.max(13,Math.abs(b.x-a.x)*0.5);
+  return `M${a.x},${a.y} C${a.x+dx},${a.y} ${b.x-dx},${b.y} ${b.x},${b.y}`;
+}
+// pick the FACING sides of two cards (nearest edges) so a line never wraps around.
+function edgeAnchors(a,b){
+  const cx=n=>n._x+(sizes[n.id]?sizes[n.id].w/2:NODE_W/2), cy=n=>n._y+(sizes[n.id]?sizes[n.id].h/2:60), w=n=>(sizes[n.id]?sizes[n.id].w:NODE_W);
+  const aLeft = cx(a) <= cx(b);
+  const p1 = aLeft ? {x:a._x+w(a), y:cy(a), dir:1} : {x:a._x, y:cy(a), dir:-1};
+  const p2 = aLeft ? {x:b._x, y:cy(b), dir:-1} : {x:b._x+w(b), y:cy(b), dir:1};
+  return [p1,p2];
+}
+function bezierD(a,b){ const dx=Math.max(13,Math.abs(b.x-a.x)*0.5); return `M${a.x},${a.y} C${a.x+(a.dir||1)*dx},${a.y} ${b.x+(b.dir==null?-1:b.dir)*dx},${b.y} ${b.x},${b.y}`; }
+const EC = {next:'#9aa3b2',success:'#1f9d57',fail:'#d24b47',sub:'#9db3d6'};
+const SVGNS='http://www.w3.org/2000/svg';
+let selectedEdge=null;
+function renderEdges(){
+  const es = projectEdges();
+  const ns = projectNodes();
+  // size the svg to the graph bounds so paths are hit-testable everywhere (not just 300x150)
+  let W=2000,H=1200;
+  ns.forEach(n=>{ if(n._x!=null&&sizes[n.id]){ W=Math.max(W,n._x+sizes[n.id].w+500); H=Math.max(H,n._y+sizes[n.id].h+500); } });
+  svg.setAttribute('width',W); svg.setAttribute('height',H);
+
+  let defs = `<defs>${['next','success','fail','sub'].map(t=>`
+    <marker id="arw-${t}" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1,1 L8,4.5 L1,8 Z" fill="${EC[t]}"/></marker>`).join('')}</defs>`;
+  let paths='';
+  edgeUI.innerHTML='';
+  es.forEach(e=>{
+    const a=nodeById(e.from), b=nodeById(e.to);
+    if(!a||!b||a._x==null||b._x==null) return;
+    const [p1,p2]=edgeAnchors(a,b);
+    const d=bezierD(p1,p2);
+    const sel = selectedEdge===e.id;
+    // fat transparent hit path (easy to click) + visible colored path
+    paths += `<path d="${d}" fill="none" stroke="rgba(0,0,0,0)" stroke-width="20" data-edge="${e.id}" style="cursor:pointer"/>`;
+    paths += `<path d="${d}" fill="none" stroke="${EC[e.type]}" stroke-width="${sel?3.5:2}"${e.type==='sub'?' stroke-dasharray="5 4"':''} marker-end="url(#arw-${e.type})" opacity="${sel?1:.9}" pointer-events="none"/>`;
+    const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+    const pill=document.createElement('div');
+    pill.className='epill '+e.type+(sel?' esel show':'');   // hidden until hover/select (declutters → tighter layout)
+    pill.dataset.pill=e.id;
+    pill.style.left=mx+'px'; pill.style.top=my+'px';
+    pill.innerHTML = `${ {next:'다음',success:'성공',fail:'실패',sub:'하위'}[e.type] }<span class="x" data-x="1">✕</span>`;
+    pill.addEventListener('mousedown',ev=>ev.stopPropagation());
+    pill.addEventListener('mouseenter',()=>showPill(e.id));
+    pill.addEventListener('mouseleave',()=>hidePill(e.id));
+    pill.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      if(ev.target.dataset.x){ removeEdge(e.id); return; }
+      const order = e.type==='sub' ? ['sub','next','success','fail'] : ['next','success','fail'];
+      e.type=order[(order.indexOf(e.type)+1)%order.length]; persist(); renderEdges();
+    });
+    edgeUI.appendChild(pill);
+    if(sel){ addEndpointHandle(e,'from',p1); addEndpointHandle(e,'to',p2); }
+  });
+  svg.innerHTML = defs + paths;
+  svg.querySelectorAll('[data-edge]').forEach(p=>{
+    p.addEventListener('mousedown',ev=>ev.stopPropagation());
+    p.addEventListener('mouseenter',()=>showPill(p.dataset.edge));
+    p.addEventListener('mouseleave',()=>hidePill(p.dataset.edge));
+    p.addEventListener('click',ev=>{ ev.stopPropagation(); selectEdge(p.dataset.edge); });
+  });
+}
+function selectEdge(id){ selectedEdge=id; if(selectedId) closePanel(); renderEdges(); }
+function deselectEdge(){ if(selectedEdge!==null){ selectedEdge=null; renderEdges(); } }
+function showPill(id){ const p=edgeUI.querySelector(`[data-pill="${CSS.escape(id)}"]`); if(p) p.classList.add('show'); }
+function hidePill(id){ if(selectedEdge===id) return; const p=edgeUI.querySelector(`[data-pill="${CSS.escape(id)}"]`); if(p) p.classList.remove('show'); }
+function removeEdge(id){ markUndo(); db.edges=db.edges.filter(x=>x.id!==id); if(selectedEdge===id) selectedEdge=null; snapshotPositions(); persist(); renderEdges(); }
+function dupEdge(from,to,exceptId){ return from===to || db.edges.some(x=>x.id!==exceptId&&x.from===from&&x.to===to); }
+function addEndpointHandle(e,end,pos){
+  const h=document.createElement('div');
+  h.className='ehandle';
+  h.style.left=pos.x+'px'; h.style.top=pos.y+'px';
+  h.title = end==='to' ? '도착점을 다른 카드로 끌어 재연결' : '시작점을 다른 카드로 끌어 재연결';
+  h.addEventListener('mousedown',ev=>{ ev.stopPropagation(); startReroute(e,end,ev); });
+  edgeUI.appendChild(h);
+}
+function startReroute(e,end,ev){
+  ev.preventDefault();
+  function mm(evt){
+    clearPreview();
+    const w=screenToWorld(evt.clientX,evt.clientY);
+    const fixed = end==='to' ? anchorOut(nodeById(e.from)) : anchorIn(nodeById(e.to));
+    const p1 = end==='to' ? fixed : {x:w.x,y:w.y};
+    const p2 = end==='to' ? {x:w.x,y:w.y} : fixed;
+    preview=document.createElementNS(SVGNS,'path');
+    preview.setAttribute('d',bezier(p1,p2));
+    preview.setAttribute('fill','none');preview.setAttribute('stroke','#407ff2');
+    preview.setAttribute('stroke-width','2.5');preview.setAttribute('stroke-dasharray','5 5');
+    svg.appendChild(preview);
+  }
+  function mu(evt){
+    document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
+    clearPreview();
+    const tgt=document.elementFromPoint(evt.clientX,evt.clientY);
+    const card=tgt&&tgt.closest('.node');
+    if(card){
+      const nid=card.dataset.id;
+      if(end==='to' && !dupEdge(e.from,nid,e.id)) e.to=nid;
+      if(end==='from' && !dupEdge(nid,e.to,e.id)) e.from=nid;
+      snapshotPositions(); persist(); renderEdges();   // don't reshuffle other cards
+    } else { renderEdges(); }
+  }
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+}
+
+/* =========================================================================
+   NODE INTERACTION: click(open) vs drag(move + proximity connect)
+   ========================================================================= */
+let drag=null, preview=null;
+function wireNode(el){
+  const id=el.dataset.id;
+  const handle=el.querySelector('[data-role=handle]');
+  handle.addEventListener('mousedown',ev=>{ ev.stopPropagation(); startConnect(id,ev,'out'); });
+  const handleL=el.querySelector('[data-role=handle-l]');
+  if(handleL) handleL.addEventListener('mousedown',ev=>{ ev.stopPropagation(); startConnect(id,ev,'in'); });
+  el.addEventListener('mousedown',ev=>{
+    if(ev.button!==0) return;
+    if(ev.target.isContentEditable) return;
+    deselectEdge();
+    if(ev.shiftKey){ ev.preventDefault(); ev.stopPropagation();
+      if(selNodes.has(id)) selNodes.delete(id); else selNodes.add(id);
+      selectedId=null; if(panel.classList.contains('open')) panel.classList.remove('open');
+      applySelClasses(); return; }
+    startNodeDrag(id,el,ev);
+  });
+  el.addEventListener('contextmenu',ev=>{ ev.preventDefault(); openNodeMenu(id,ev); });
+  el.querySelector('[data-role=title]').addEventListener('dblclick',ev=>{ ev.stopPropagation(); editTitle(id,el); });
+  const dueEl=el.querySelector('[data-role=due]');
+  if(dueEl){ dueEl.addEventListener('mousedown',ev=>ev.stopPropagation()); dueEl.addEventListener('click',ev=>{ ev.stopPropagation(); editDue(id,dueEl); }); }
+  const etaEl=el.querySelector('[data-role=eta]');
+  if(etaEl){ etaEl.addEventListener('mousedown',ev=>ev.stopPropagation()); etaEl.addEventListener('click',ev=>{ ev.stopPropagation(); const nn=nodeById(id); nn.eta=nextEta(nn.eta); persist(); refreshNode(id); }); }
+  const stEl=el.querySelector('[data-role=state]');
+  if(stEl){ stEl.addEventListener('mousedown',ev=>ev.stopPropagation()); stEl.addEventListener('click',ev=>{ ev.stopPropagation();
+    markUndo(); const nn=nodeById(id); nn.state=STATE_ORDER[(STATE_ORDER.indexOf(nn.state)+1)%STATE_ORDER.length]; stampDone(nn); persist(); refreshNode(id);
+    if(selectedId===id){ const s=STATE[nn.state]; const p=$('#pState'); if(p) p.innerHTML=`<span class="statedot" style="display:inline-block;background:${s.color}"></span> ${s.label}`; const fs=$('#fState'); if(fs) fs.value=nn.state; }
+  }); }
+  const subsEl=el.querySelector('[data-role=subs]');
+  if(subsEl){ subsEl.style.cursor='pointer'; subsEl.addEventListener('mousedown',ev=>ev.stopPropagation()); subsEl.addEventListener('click',ev=>{ ev.stopPropagation(); expandSubtasks(id); }); }
+}
+function wireNodeEvents(){ nodesLayer.querySelectorAll('.node').forEach(wireNode); }
+// update ONE card in place — never re-run dagre on edits (that caused the resize jitter)
+function refreshNode(id){
+  const n=nodeById(id);
+  if(n && n.state==='Done'){ if(selectedId===id) closePanel(); snapshotPositions(); layout(); renderSidebar(); return; }   // just completed → drop off the board, others stay put
+  const old=nodesLayer.querySelector(`.node[data-id="${CSS.escape(id)}"]`);
+  if(!old||!n||n._x==null){ layout(); return; }
+  const el=buildNodeEl(n);
+  el.style.left=n._x+'px'; el.style.top=n._y+'px';
+  old.replaceWith(el);
+  sizes[id]={w:el.offsetWidth||NODE_W, h:el.offsetHeight||120};
+  wireNode(el);
+  renderEdges();
+}
+function editDue(id,anchorEl){
+  const n=nodeById(id);
+  const inp=document.createElement('input');
+  inp.type='date'; inp.value=n.due||'';
+  const r=anchorEl.getBoundingClientRect();
+  inp.style.cssText=`position:fixed;left:${r.left}px;top:${Math.max(60,r.top-4)}px;z-index:90;font-family:var(--font-ui);font-size:12px;padding:3px 6px;border:1px solid var(--blue);border-radius:6px;background:#fff`;
+  document.body.appendChild(inp);
+  let closed=false;
+  function done(){ if(closed) return; closed=true; n.due=inp.value||null; inp.remove(); persist(); refreshNode(id); }
+  inp.addEventListener('change',done);
+  inp.addEventListener('blur',()=>setTimeout(done,150));
+  inp.focus(); if(inp.showPicker){ try{inp.showPicker();}catch(e){} }
+}
+function startNodeDrag(id,el,ev){
+  ev.preventDefault();
+  // dragging an unselected node selects just it; dragging a selected one moves the whole selection
+  if(!selNodes.has(id)){ selNodes=new Set([id]); applySelClasses(); }
+  const group=[...selNodes];
+  const start={x:ev.clientX,y:ev.clientY};
+  const orig={}; group.forEach(gid=>{ const gn=nodeById(gid); if(gn) orig[gid]={x:gn._x,y:gn._y}; });
+  let moved=false;
+  el.classList.add('dragging');
+  function mm(e){
+    const dx=(e.clientX-start.x)/k, dy=(e.clientY-start.y)/k;
+    if(Math.abs(e.clientX-start.x)>3||Math.abs(e.clientY-start.y)>3) moved=true;
+    group.forEach(gid=>{ const gn=nodeById(gid); if(!gn||!orig[gid])return;
+      gn._x=orig[gid].x+dx; gn._y=orig[gid].y+dy;
+      const gel=(gid===id)?el:nodesLayer.querySelector(`.node[data-id="${CSS.escape(gid)}"]`);
+      if(gel){ gel.style.left=gn._x+'px'; gel.style.top=gn._y+'px'; } });
+    renderEdges();
+    if(moved && group.length===1) showProximity(id);
+  }
+  function mu(e){
+    document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu);
+    el.classList.remove('dragging');
+    clearPreview();
+    if(!moved){ const nn=nodeById(id); if(nn&&nn.kind==='text') selectText(id); else openPanel(id); return; }
+    markUndo();
+    group.forEach(gid=>{ const gn=nodeById(gid); if(gn) db.pos[gid]={x:gn._x,y:gn._y}; });
+    // proximity auto-connect only when dragging a single node
+    if(group.length===1){ const {left,right}=nearestSides(id); if(left) tryConnect(left.id,id); if(right) tryConnect(id,right.id); }
+    persist();
+  }
+  document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu);
+}
+function nearestNode(id){
+  const n=nodeById(id); const c={x:n._x+sizes[id].w/2,y:n._y+sizes[id].h/2};
+  let best=null,bd=THRESHOLD;
+  projectNodes().forEach(m=>{
+    if(m.id===id) return;
+    const mc={x:m._x+sizes[m.id].w/2,y:m._y+sizes[m.id].h/2};
+    const dist=Math.hypot(mc.x-c.x,mc.y-c.y);
+    if(dist<bd){ bd=dist; best=m; }
+  });
+  return best;
+}
+// nearest card on EACH side (by center x) within THRESHOLD → so guide lines show left AND right
+function nearestSides(id){
+  const cx=q=>q._x+(sizes[q.id]?sizes[q.id].w/2:NODE_W/2), cy=q=>q._y+(sizes[q.id]?sizes[q.id].h/2:60);
+  const n=nodeById(id); const c={x:cx(n),y:cy(n)};
+  let left=null,ld=THRESHOLD, right=null,rd=THRESHOLD;
+  projectNodes().forEach(m=>{ if(m.id===id||m._x==null||!sizes[m.id]) return;
+    const dist=Math.hypot(cx(m)-c.x, cy(m)-c.y); if(dist>=THRESHOLD) return;
+    if(cx(m)<=c.x){ if(dist<ld){ ld=dist; left=m; } } else { if(dist<rd){ rd=dist; right=m; } }
+  });
+  return {left,right};
+}
+function proxLine(from,to){
+  if(edgeExists(from.id,to.id)) return;
+  const [p1,p2]=edgeAnchors(from,to);
+  const pth=document.createElementNS(SVGNS,'path');
+  pth.setAttribute('class','prox-preview');
+  pth.setAttribute('d',bezierD(p1,p2));
+  pth.setAttribute('fill','none');pth.setAttribute('stroke','var(--blue)');
+  pth.setAttribute('stroke-width','2.5');pth.setAttribute('stroke-dasharray','5 5');pth.setAttribute('opacity','.85');
+  svg.appendChild(pth);
+}
+function showProximity(id){
+  clearPreview();
+  const {left,right}=nearestSides(id); const n=nodeById(id);
+  if(left) proxLine(left,n);     // left neighbor → this
+  if(right) proxLine(n,right);   // this → right neighbor
+}
+function clearPreview(){ if(preview){ preview.remove(); preview=null; } if(svg) svg.querySelectorAll('.prox-preview').forEach(p=>p.remove()); }
+function edgeExists(a,b){ return db.edges.some(e=>(e.from===a&&e.to===b)||(e.from===b&&e.to===a)); }
+function tryConnect(a,b){
+  const na=nodeById(a), nb=nodeById(b);
+  const cx=q=>q._x+(sizes[q.id]?sizes[q.id].w/2:NODE_W/2);
+  const fromN = cx(na) < cx(nb) ? na : nb;
+  const toN   = cx(na) < cx(nb) ? nb : na;
+  if(edgeExists(fromN.id,toN.id)) return;
+  markUndo();
+  db.edges.push({id:'e'+Date.now(),from:fromN.id,to:toN.id,type:'next'});
+  snapshotPositions(); persist(); renderEdges();   // freeze positions, just draw the line
+}
+
+// drag from handle to a target node (explicit connect)
+// drag from a handle to a target node. dir 'out' = right handle (this→target); 'in' = left handle (target→this)
+function startConnect(id,ev,dir){
+  ev.preventDefault();
+  const from=nodeById(id); const incoming = dir==='in';
+  function mm(e){
+    clearPreview();
+    const w=screenToWorld(e.clientX,e.clientY);
+    const anc = incoming ? anchorIn(from) : anchorOut(from);
+    preview=document.createElementNS('http://www.w3.org/2000/svg','path');
+    preview.setAttribute('d', incoming ? bezier({x:w.x,y:w.y},anc) : bezier(anc,{x:w.x,y:w.y}));
+    preview.setAttribute('fill','none');preview.setAttribute('stroke','var(--blue)');
+    preview.setAttribute('stroke-width','2.5');preview.setAttribute('stroke-dasharray','5 5');
+    svg.appendChild(preview);
+  }
+  function mu(e){
+    document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
+    clearPreview();
+    const tgt=document.elementFromPoint(e.clientX,e.clientY);
+    const card=tgt&&tgt.closest('.node');
+    if(card&&card.dataset.id!==id){
+      const b=card.dataset.id;
+      const f = incoming ? b : id, t = incoming ? id : b;
+      if(!edgeExists(f,t)){ markUndo(); db.edges.push({id:'e'+Date.now(),from:f,to:t,type:'next'}); snapshotPositions(); persist(); renderEdges(); }
+    }
+  }
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+}
+
+function editTitle(id,el){
+  const n=nodeById(id); const isText=n.kind==='text';
+  const t=el.querySelector('[data-role=title]');
+  t.setAttribute('contenteditable','true'); t.focus();
+  document.execCommand('selectAll',false,null);
+  function done(){
+    t.removeAttribute('contenteditable');
+    if(isText){ const v=t.innerText.replace(/\s+$/,''); n.text=v; }
+    else { const v=t.textContent.trim()||'새 작업'; n.title=v; t.textContent=v; }
+    persist();
+    t.removeEventListener('blur',done);
+    refreshNode(id);
+  }
+  // keep the model in sync live, so a connect/layout mid-edit doesn't discard the typed title
+  t.addEventListener('input',()=>{ if(isText) n.text=t.innerText; else n.title=t.textContent; });
+  t.addEventListener('blur',done);
+  // cards: Enter commits; text notes: Enter = newline, Esc/blur commits
+  t.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!isText){e.preventDefault();t.blur();} if(e.key==='Escape'){e.preventDefault();t.blur();} });
+}
+
+/* =========================================================================
+   CONTEXT MENU
+   ========================================================================= */
+const ctx=document.getElementById('ctxMenu');
+function openNodeMenu(id,ev){
+  const n=nodeById(id);
+  if(n.kind==='text'){
+    ctx.innerHTML=`
+      <div class="mlabel">텍스트</div>
+      <button data-a="edit">✎ 편집</button>
+      <div class="sep"></div>
+      <button class="danger" data-a="del">🗑 삭제 (Del)</button>`;
+    ctx.style.display='block';
+    ctx.style.left=Math.min(ev.clientX,innerWidth-190)+'px';
+    ctx.style.top=Math.min(ev.clientY,innerHeight-140)+'px';
+    ctx.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      if(b.dataset.a==='del') deleteNode(id);
+      else { const el=nodesLayer.querySelector(`.node[data-id="${CSS.escape(id)}"]`); if(el) editTitle(id,el); }
+      ctx.style.display='none';
+    });
+    return;
+  }
+  ctx.innerHTML=`
+    <div class="mlabel">${dispId(n.id)} · ${escapeHtml(n.title).slice(0,22)}</div>
+    <button data-a="next-succ">＋ 다음 단계 (성공)</button>
+    <button data-a="next-fail">＋ 다음 단계 (실패)</button>
+    <button data-a="next-plain">＋ 다음 단계</button>
+    <div class="sep"></div>
+    <button data-a="cycle">↺ 상태 변경 (${STATE[n.state].label})</button>
+    <button data-a="open">▤ 상세 / 리스트 보기</button>
+    ${n.children&&n.children.length?`<button data-a="expand">⌗ 서브태스크 ${n.children.length}개 박스로 펼치기</button>`:''}
+    <div class="sep"></div>
+    <button class="danger" data-a="del">🗑 삭제 (Del)</button>`;
+  ctx.style.display='block';
+  ctx.style.left=Math.min(ev.clientX,innerWidth-190)+'px';
+  ctx.style.top=Math.min(ev.clientY,innerHeight-260)+'px';
+  ctx.querySelectorAll('button').forEach(b=>b.onclick=()=>{ menuAction(id,b.dataset.a); ctx.style.display='none'; });
+}
+document.addEventListener('click',e=>{ if(!ctx.contains(e.target)) ctx.style.display='none'; });
+function menuAction(id,a){
+  const n=nodeById(id);
+  if(a==='del'){ deleteNode(id); return; }
+  if(a==='expand'){ expandSubtasks(id); return; }
+  if(a==='open'){ openPanel(id); return; }
+  if(a==='cycle'){
+    const i=STATE_ORDER.indexOf(n.state);
+    markUndo(); n.state=STATE_ORDER[(i+1)%STATE_ORDER.length]; stampDone(n); persist(); layout(); return;
+  }
+  if(a.startsWith('next-')){
+    const type=a==='next-succ'?'success':a==='next-fail'?'fail':'next';
+    addNext(id,type);
+  }
+}
+function addNext(id,type){
+  markUndo();
+  const n=nodeById(id);
+  const nid='#'+(++nextLocalNum);
+  const child={id:nid,title:'새 작업',desc:'',priority:0,priorityLabel:'No priority',
+    due:null,state:'Todo',project:n.project,children:[],assignees:[{id:'me',type:'me'}],created:todayStr()};
+  db.nodes.push(child);
+  db.edges.push({id:'e'+Date.now(),from:id,to:nid,type});
+  // place to the right of parent
+  if(n._x!=null) db.pos[nid]={x:n._x+sizes[id].w+90, y:n._y + (type==='fail'?90:type==='success'?-90:0)};
+  persist(); layout(); renderSidebar();
+  // focus the new title
+  setTimeout(()=>{ const el=nodesLayer.querySelector(`.node[data-id="${CSS.escape(nid)}"]`); if(el) editTitle(nid,el); },30);
+}
+// log a deleted node into the 완료함 archive (with a real timestamp) so it can be reviewed / restored
+function archiveNode(n){ if(!n) return; (db.archive=db.archive||[]).push({at:new Date().toISOString(), node:structuredClone(n)}); }
+function deleteNode(id){
+  markUndo(); snapshotPositions();   // keep the other cards exactly where they are
+  const n=nodeById(id); if(n) archiveNode(n);
+  db.nodes=db.nodes.filter(n=>n.id!==id);
+  db.edges=db.edges.filter(e=>e.from!==id&&e.to!==id);
+  delete db.pos[id];
+  selNodes.delete(id);
+  if(selectedId===id){ selectedId=null; if(panel.classList.contains('open')) panel.classList.remove('open'); }
+  persist(); layout(); renderSidebar();
+}
+// turn a node's subtasks into connected child boxes (parent --sub--> child)
+function expandSubtasks(id){
+  const n=nodeById(id); if(!n||!n.children||!n.children.length) return;
+  markUndo();
+  n.children.forEach((c,idx)=>{
+    if(!nodeById(c.id)){
+      db.nodes.push({ id:c.id, title:c.title||'서브태스크', desc:'', priority:0, priorityLabel:'No priority',
+        due:null, state:c.state||'Todo', project:n.project, children:[], assignees:[], created:todayStr() });
+    }
+    if(!db.edges.some(e=>e.from===id&&e.to===c.id)) db.edges.push({id:'es-'+id+'-'+idx, from:id, to:c.id, type:'sub'});
+  });
+  persist(); layout(); fitView(); renderSidebar();
+}
+function todayStr(){ return TODAY.toISOString().slice(0,10); }
+
+/* =========================================================================
+   SIDE PANEL (detail + subtask list)
+   ========================================================================= */
+const panel=document.getElementById('panel');
+// text notes have no task fields → select (for drag/Delete) without the card-shaped panel
+function selectText(id){
+  deselectEdge();
+  if(panel.classList.contains('open')) panel.classList.remove('open');
+  selectedId=id; selNodes=new Set([id]);
+  applySelClasses();
+}
+function openPanel(id){
+  const n0=nodeById(id); if(n0&&n0.kind==='text') return selectText(id);
+  selectedId=id; selNodes=new Set([id]); const n=nodeById(id);
+  applySelClasses();
+  $('#pPid').textContent=dispId(n.id);
+  const st=STATE[n.state];
+  $('#pState').innerHTML=`<span class="statedot" style="display:inline-block;background:${st.color}"></span> ${st.label}`;
+  $('#pBody').innerHTML=`
+    <div class="field"><label>제목</label><input id="fTitle" value="${escapeHtml(n.title)}"></div>
+    <div class="row2">
+      <div class="field"><label>상태</label><select id="fState">${STATE_ORDER.map(s=>`<option ${s===n.state?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="field"><label>우선순위</label><select id="fPri">${[0,1,2,3,4].map(p=>`<option value="${p}" ${p===n.priority?'selected':''}>${PL[p]}</option>`).join('')}</select></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>마감</label><input type="date" id="fDue" value="${n.due||''}"></div>
+      <div class="field"><label>프로젝트</label><input value="${n.project}" disabled></div>
+    </div>
+    <div class="field"><label>설명</label><textarea id="fDesc" rows="3">${escapeHtml(n.desc||'')}</textarea></div>
+    <div class="field"><label>담당자</label>
+      <div id="pAssignees" class="assignees-edit"></div>
+      <select id="pAddPerson" class="mini-sel"></select>
+    </div>`;
+  $('#fTitle').oninput=e=>{ n.title=e.target.value; persist(); refreshNode(id); };
+  $('#fState').onchange=e=>{ markUndo(); n.state=e.target.value; stampDone(n); persist(); refreshNode(id);
+    const st2=STATE[n.state]; $('#pState').innerHTML=`<span class="statedot" style="display:inline-block;background:${st2.color}"></span> ${st2.label}`; };
+  $('#fPri').onchange=e=>{ n.priority=+e.target.value; n.priorityLabel=PL[n.priority]; persist(); refreshNode(id); };
+  $('#fDue').onchange=e=>{ n.due=e.target.value||null; persist(); refreshNode(id); };
+  $('#fDesc').oninput=e=>{ n.desc=e.target.value; persist(); };
+  renderAssignees(id);
+  $('#pAddPerson').onchange=e=>{ const pid=e.target.value; if(!pid) return;
+    const p=PEOPLE[pid]; const dt=p.group==='me'?'me':p.group==='external'?'outsource':'help';
+    (n.assignees=n.assignees||[]).push({id:pid,type:dt}); persist(); renderAssignees(id); refreshNode(id); };
+  panel.classList.add('open');
+  ensureVisible(id);
+}
+const REL_TYPES=['me','peer','advisor','help','outsource','inbound'];
+const REL_LABEL={me:'나',peer:'공동',advisor:'자문',help:'도움',outsource:'위임',inbound:'부탁받음'};
+function renderAssignees(id){
+  const n=nodeById(id); const box=$('#pAssignees'); if(!box) return;
+  box.innerHTML=(n.assignees||[]).map(a=>{ const p=PEOPLE[a.id]; if(!p) return '';
+    return `<span class="achip" data-pid="${a.id}"><span class="adot ${p.group}"></span><b>${p.name}</b><span class="atype" data-type title="클릭해 관계 변경">${REL_LABEL[a.type]||a.type}</span><span class="ax" data-x title="제거">✕</span></span>`;
+  }).join('') || '<span class="empty">담당자 없음</span>';
+  box.querySelectorAll('.achip').forEach(c=>{ const pid=c.dataset.pid;
+    c.querySelector('[data-x]').onclick=()=>{ n.assignees=(n.assignees||[]).filter(a=>a.id!==pid); persist(); renderAssignees(id); refreshNode(id); };
+    c.querySelector('[data-type]').onclick=()=>{ const a=n.assignees.find(a=>a.id===pid); a.type=REL_TYPES[(REL_TYPES.indexOf(a.type)+1)%REL_TYPES.length]; persist(); renderAssignees(id); refreshNode(id); };
+  });
+  const sel=$('#pAddPerson'); if(sel){ const has=new Set((n.assignees||[]).map(a=>a.id));
+    sel.innerHTML='<option value="">＋ 담당자 추가…</option>'+SEED.people.filter(p=>!has.has(p.id))
+      .map(p=>`<option value="${p.id}">${p.name} · ${p.group==='me'?'나':p.group==='internal'?'연구실':'외부'}</option>`).join('');
+  }
+}
+function applySelClasses(){ nodesLayer.querySelectorAll('.node').forEach(e=>e.classList.toggle('nsel', selNodes.has(e.dataset.id))); }
+function clearSel(){ selNodes.clear(); selectedId=null; if(panel.classList.contains('open')) panel.classList.remove('open'); applySelClasses(); }
+function closePanel(){ clearSel(); }
+function deleteSelected(){
+  if(!selNodes.size) return;
+  markUndo(); snapshotPositions();   // keep the survivors put
+  const ids=new Set(selNodes);
+  db.nodes.filter(n=>ids.has(n.id)).forEach(archiveNode);   // record before removing
+  db.nodes=db.nodes.filter(n=>!ids.has(n.id));
+  db.edges=db.edges.filter(e=>!ids.has(e.from)&&!ids.has(e.to));
+  ids.forEach(id=>delete db.pos[id]);
+  selNodes.clear(); selectedId=null; if(panel.classList.contains('open')) panel.classList.remove('open');
+  persist(); layout(); renderSidebar();
+}
+$('#pClose').onclick=closePanel;
+document.addEventListener('keydown',e=>{
+  const inField = e.target&&(e.target.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+  if(e.key==='Escape'){
+    if(inField){ e.target.blur(); return; }
+    ctx.style.display='none';
+    deselectEdge();
+    if(panel.classList.contains('open')) closePanel();
+    return;
+  }
+  if(e.key==='Backspace'||e.key==='Delete'){
+    if(inField) return;                      // typing — let it edit
+    if(selectedEdge){ e.preventDefault(); removeEdge(selectedEdge); return; }
+    if(selNodes.size){ e.preventDefault(); deleteSelected(); return; }
+  }
+});
+
+/* ---- clipboard: copy / paste selected node(s) with Ctrl/Cmd+C · V ---- */
+let clipboard=null, pasteN=0;
+function copySelection(){
+  const items=[...selNodes].map(id=>nodeById(id)).filter(n=>n&&n._x!=null);
+  if(!items.length) return;
+  const minX=Math.min(...items.map(n=>n._x)), minY=Math.min(...items.map(n=>n._y));
+  clipboard={ x:minX, y:minY, items: items.map(n=>{ const c=structuredClone(n); delete c._x; delete c._y; return {node:c, dx:n._x-minX, dy:n._y-minY}; }) };
+  pasteN=0; showToast(items.length>1?items.length+'개 복사됨':'복사됨');
+}
+function pasteClipboard(){
+  if(!clipboard||!clipboard.items||!clipboard.items.length) return;
+  markUndo();
+  pasteN++; const off=24*pasteN; const newIds=[];
+  clipboard.items.forEach(it=>{ const nid='#'+(++nextLocalNum);
+    const clone=structuredClone(it.node); clone.id=nid; clone.project=project;
+    db.nodes.push(clone);
+    db.pos[nid]={x:clipboard.x+it.dx+off, y:clipboard.y+it.dy+off};
+    newIds.push(nid); });
+  persist(); layout(); renderSidebar();
+  selNodes=new Set(newIds); selectedId=null; applySelClasses();
+  if(newIds.length) ensureVisible(newIds[0]);
+  showToast(newIds.length>1?newIds.length+'개 붙여넣음':'붙여넣음');
+}
+document.addEventListener('keydown',e=>{
+  const t=e.target; const inField = t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+  if(inField) return;
+  if(!(e.metaKey||e.ctrlKey)) return;
+  const key=e.key.toLowerCase();
+  if(key==='c' && selNodes.size){ copySelection(); }
+  else if(key==='v' && clipboard){ e.preventDefault(); pasteClipboard(); }
+  else if(key==='z' && !e.shiftKey){ e.preventDefault(); undo(); }
+});
+
+/* =========================================================================
+   LIST VIEW
+   ========================================================================= */
+const listview=document.getElementById('listview');
+function lcardHtml(n){
+  const u=urgency(n);
+  return `<div class="lcard ${u==='urgent'?'urgent':''}" data-id="${escapeHtml(n.id)}">
+      <div class="top" style="display:flex;align-items:center;gap:7px;margin-bottom:6px">${priHtml(n.priority)}<span class="id">${dispId(n.id)}</span>${avatarsHtml(n.assignees)}</div>
+      <div class="lt">${escapeHtml(n.title)}</div>
+      <div class="meta" style="display:flex;gap:7px;align-items:center">${n.due?`<span class="due ${u==='urgent'?'over':u==='soon'?'soon':''}">${fmtDue(n.due)}</span>`:''}${n.children&&n.children.length?`<span class="subcount">⌗ ${n.children.length}</span>`:''}</div>
+    </div>`;
+}
+function lcolsHtml(ns){
+  const cols=STATE_ORDER.filter(s=>s!=='Done' && (s!=='Canceled'||ns.some(n=>n.state==='Canceled')));
+  return `<div class="lcols">${cols.map(s=>{
+    const items=ns.filter(n=>n.state===s);
+    return `<div class="lcol"><h3><span class="statedot" style="background:${STATE[s].color}"></span>${s}<span class="ct">${items.length}</span></h3>
+      ${items.map(lcardHtml).join('')||'<div class="empty">—</div>'}</div>`;
+  }).join('')}</div>`;
+}
+// clicking a task in list/overview → jump to its own project's graph and open it
+function wireLcards(root){
+  root.querySelectorAll('.lcard').forEach(c=>c.onclick=()=>{ const n=nodeById(c.dataset.id); if(!n) return;
+    project=n.project||project; markActiveProject(); setView('graph'); openPanel(n.id); centerOn(n.id); });
+}
+function renderList(){
+  const kids=childrenOf(project);
+  if(kids.length){ renderParentOverview(kids); return; }
+  listview.innerHTML=lcolsHtml(projectNodes());
+  wireLcards(listview);
+}
+// parent (with subprojects) → one section per subproject (+ the parent's own 직속 tasks)
+function renderParentOverview(kids){
+  const sec=(name,nodes,isParent)=>`<div class="lsection">
+      <div class="lsec-head" data-p="${escapeHtml(name)}" data-parent="${isParent?1:0}">
+        <span class="pnum">#${projNum(name)}</span><b class="lsec-name">${escapeHtml(name)}</b>${isParent?'<span class="lsec-tag">직속</span>':''}<span class="lsec-ct">${nodes.length}</span><span class="lsec-go">${isParent?'그래프 열기 →':'보드 열기 →'}</span>
+      </div>
+      ${nodes.length?lcolsHtml(nodes):'<div class="lsec-empty">비어 있음</div>'}
+    </div>`;
+  let html=`<div class="loverview"><div class="lov-title">#${projNum(project)} ${escapeHtml(project)} <span class="lov-sub">— 서브프로젝트 조망</span></div>`;
+  const own=nodesOfProject(project);
+  if(own.length) html+=sec(project, own, true);
+  kids.forEach(c=>{ html+=sec(c, nodesOfProject(c), false); });
+  html+=`</div>`;
+  listview.innerHTML=html;
+  listview.querySelectorAll('.lsec-head').forEach(h=>h.onclick=()=>{ if(h.dataset.parent==='1') setView('graph'); else setProject(h.dataset.p); });
+  wireLcards(listview);
+}
+function centerOn(id){
+  const n=nodeById(id); if(!n||n._x==null) return;
+  const r=viewport.getBoundingClientRect();
+  k=1; tx=r.width/2 - (n._x+sizes[id].w/2); ty=r.height/2 - (n._y+sizes[id].h/2); applyTransform();
+}
+// pan (never zoom) so the selected node stays visible to the LEFT of the side panel
+function ensureVisible(id){
+  const n=nodeById(id); if(!n||n._x==null||!sizes[id]) return;
+  const r=viewport.getBoundingClientRect();
+  const panelW = panel.classList.contains('open') ? 360 : 20;
+  const m=24;
+  const left=tx+n._x*k, right=tx+(n._x+sizes[id].w)*k;
+  const top=ty+n._y*k, bot=ty+(n._y+sizes[id].h)*k;
+  const visR=r.width-panelW;
+  let dx=0,dy=0;
+  if(right>visR-m) dx=visR-m-right; else if(left<m) dx=m-left;
+  if(bot>r.height-m) dy=r.height-m-bot; else if(top<m) dy=m-top;
+  if(dx||dy){ tx+=dx; ty+=dy; applyTransform(); }
+}
+
+/* =========================================================================
+   VIEW SWITCH / TOOLBAR
+   ========================================================================= */
+function setView(v){
+  if(doneOpen) closeDone();
+  view=v;
+  document.querySelectorAll('#viewToggle button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  viewport.style.display = v==='graph'?'block':'none';
+  listview.style.display = v==='list'?'block':'none';
+  if(v==='list'){ closePanel(); renderList(); }
+  else layout();
+  renderProjectBar();
+}
+document.querySelectorAll('#viewToggle button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+
+/* =========================================================================
+   완료함 (DONE / ARCHIVE) — global view of finished (state=Done) + deleted items
+   ========================================================================= */
+const doneview=document.getElementById('doneview');
+let doneOpen=false;
+function fmtDate(at){ if(!at) return '—'; const d=new Date(at); if(isNaN(d)) return String(at).slice(0,10); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+let _dragRevive=null;   // item being dragged out of 완료함 onto a sidebar project
+let _dragProj=null;     // sidebar project being dragged onto another to nest it
+let _dropZone=null;     // 'nest' | 'before' | 'after' — where a dragged project would land
+function renderDone(){
+  const rows=[];
+  db.nodes.filter(n=>n.state==='Done').forEach(n=>rows.push({reason:'done', nodeId:n.id, title:n.title||n.text||'(제목 없음)', project:n.project||'기타', at:n.doneAt||n.due||n.created||'', desc:n.desc||''}));
+  (db.archive||[]).forEach((a,idx)=>{ const n=a.node||{}; rows.push({reason:'deleted', archIdx:idx, title:n.title||n.text||'(제목 없음)', project:n.project||'기타', at:a.at||'', desc:n.desc||''}); });
+  rows.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+  const nDone=rows.filter(r=>r.reason==='done').length, nDel=rows.length-nDone;
+  const attr=r=>r.reason==='done'?`data-kind="done" data-node="${escapeHtml(r.nodeId)}"`:`data-kind="deleted" data-arch="${r.archIdx}"`;
+  const row=r=>`<div class="drow" draggable="true" ${attr(r)} title="사이드바 프로젝트로 끌어 부활">
+      <span class="dtag ${r.reason}">${r.reason==='done'?'완료':'삭제'}</span>
+      <div class="dmain"><div class="dtitle">${escapeHtml(r.title)}</div>${r.desc?`<div class="ddesc">${escapeHtml(r.desc)}</div>`:''}</div>
+      <span class="dproj" title="${escapeHtml(r.project)}">${escapeHtml(r.project)}</span>
+      <span class="ddate">${fmtDate(r.at)}</span>
+      <button class="drestore">↩ 부활</button>
+    </div>`;
+  doneview.innerHTML=`<div class="dwrap">
+    <div class="dhead"><h2>완료함</h2><span class="dsub">완료 ${nDone} · 삭제 ${nDel} · 총 ${rows.length} · 행을 왼쪽 프로젝트로 끌면 부활</span><button class="close" id="dClose" title="닫기">✕</button></div>
+    ${rows.length?rows.map(row).join(''):'<div class="empty" style="padding:26px 4px">아직 완료하거나 삭제한 항목이 없어요.</div>'}
+  </div>`;
+  doneview.querySelector('#dClose').onclick=closeDone;
+  doneview.querySelectorAll('.drow').forEach(el=>{
+    const kind=el.dataset.kind;
+    const desc=kind==='done'?{kind:'done',nodeId:el.dataset.node}:{kind:'deleted',archIdx:+el.dataset.arch};
+    el.querySelector('.drestore').onclick=()=>reviveItem(desc);         // 부활 버튼 → 원래 프로젝트로
+    el.addEventListener('dragstart',e=>{ _dragRevive=desc; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain','revive'); });
+    el.addEventListener('dragend',()=>{ _dragRevive=null; });
+  });
+}
+// 부활: done → 다시 보드로 (state Todo), deleted → archive에서 꺼내 복원. targetProject 주면 그 프로젝트로 이동.
+function reviveItem(desc, targetProject){
+  if(!desc) return;
+  markUndo();
+  let pj;
+  if(desc.kind==='done'){
+    const n=nodeById(desc.nodeId); if(!n){ return; }
+    n.state='Todo'; n.doneAt=null;
+    pj=targetProject||n.project||'기타'; n.project=pj;
+    db.hidden=(db.hidden||[]).filter(p=>p!==pj);
+  } else {
+    const a=(db.archive||[])[desc.archIdx]; if(!a){ return; }
+    const n=a.node; if(!n){ return; }
+    pj=targetProject||n.project||'기타'; n.project=pj;
+    db.hidden=(db.hidden||[]).filter(p=>p!==pj); db.nodes.push(structuredClone(n));
+    db.archive.splice(desc.archIdx,1);
+  }
+  persist();
+  closeDone();                    // leave the archive and land on the project so you can SEE the revived card
+  project=pj; ensureProjectMeta(); openAncestors(pj);
+  renderSidebar(); renderProjectBar();
+  view==='list'?renderList():layout();
+  if(view==='graph') fitView();
+  showToast(`'${pj}'로 부활됨`);
+}
+function reviveDrop(targetProject){ const d=_dragRevive; _dragRevive=null; if(d) reviveItem(d, targetProject); }
+function openDone(){ doneOpen=true; doneview.style.display='block'; document.getElementById('btnDone').classList.add('on'); closePanel(); renderDone(); }
+function closeDone(){ doneOpen=false; doneview.style.display='none'; document.getElementById('btnDone').classList.remove('on'); }
+function toggleDone(){ doneOpen?closeDone():openDone(); }
+document.getElementById('btnDone').onclick=toggleDone;
+
+/* ---- left project sidebar ---- */
+const projList=document.getElementById('projList');
+// every project we know about: seed/board order first, then manual, then any orphaned from nodes
+function projectList(){
+  const seen=new Set(), out=[], hid=new Set(db.hidden||[]);
+  const add=p=>{ p=p||'기타'; if(hid.has(p)||seen.has(p)) return; seen.add(p); out.push(p); };
+  SEED.projects.forEach(add);
+  (db.extraProjects||[]).forEach(add);
+  db.nodes.forEach(n=>add(n.project));
+  const meta=db.projectMeta||{};
+  const ord=p=> (meta[p]&&typeof meta[p].ord==='number') ? meta[p].ord : Infinity;
+  return out.map((p,i)=>[p,i]).sort((a,b)=> (ord(a[0])-ord(b[0])) || (a[1]-b[1])).map(x=>x[0]);   // manual reorder overrides natural order
+}
+function projCount(p){ return db.nodes.filter(n=>(n.project||'기타')===p && n.kind!=='text' && n.state!=='Done').length; }
+function subtreeCount(p){ return subtreeProjects(p).reduce((s,x)=>s+projCount(x),0); }   // parent badge = its own + all subproject cards
+// per-project metadata: stable number + collaborator names
+function ensureProjectMeta(){
+  db.projectMeta=db.projectMeta||{}; if(db.projectSeq==null) db.projectSeq=1;
+  projectList().forEach(p=>{ if(!db.projectMeta[p]) db.projectMeta[p]={num:db.projectSeq++, people:[]}; });
+}
+function projNum(p){ return (db.projectMeta&&db.projectMeta[p]&&db.projectMeta[p].num)||'?'; }
+function projPeople(p){ return (db.projectMeta&&db.projectMeta[p]&&db.projectMeta[p].people)||[]; }
+function parentOf(p){ return (db.projectMeta&&db.projectMeta[p]&&db.projectMeta[p].parent)||null; }
+function isDescendant(p,ancestor){ let x=parentOf(p); const g=new Set(); while(x){ if(x===ancestor) return true; if(g.has(x))break; g.add(x); x=parentOf(x);} return false; }
+let openProj = new Set();   // parent projects currently expanded in the sidebar accordion
+function rowVisible(p){ let x=parentOf(p); const g=new Set(); while(x){ if(!openProj.has(x)) return false; if(g.has(x))break; g.add(x); x=parentOf(x); } return true; }
+function applyTreeVisibility(){
+  projList.querySelectorAll('.pitem').forEach(b=>{ b.style.display = rowVisible(b.dataset.p)?'':'none'; });
+  projList.querySelectorAll('[data-caret]').forEach(c=>{ c.textContent = openProj.has(c.dataset.caret)?'📂':'📁'; });
+}
+function openAncestors(p){ let x=parentOf(p); const g=new Set(); while(x){ if(g.has(x))break; g.add(x); openProj.add(x); x=parentOf(x); } }
+function renderSidebar(){
+  ensureProjectMeta();
+  const list=projectList(), lset=new Set(list);
+  const isTop=p=>{ const par=parentOf(p); return !par || !lset.has(par); };
+  const item=(p,depth)=>{
+    const kids=list.filter(c=>parentOf(c)===p && c!==p);
+    const caret = kids.length ? `<span class="pcaret2 pfolder" data-caret="${escapeHtml(p)}" title="상위 프로젝트">${openProj.has(p)?'📂':'📁'}</span>` : `<span class="pcaret2 empty"></span>`;
+    let h=`<button class="pitem${p===project?' on':''}" data-p="${escapeHtml(p)}" draggable="true" style="padding-left:${8+depth*14}px" title="${escapeHtml(p)} · 클릭=열기/선택 · 더블클릭 이름변경 · 우클릭 메뉴 · 드래그해서 하위로">
+      ${caret}<span class="pnum">#${projNum(p)}</span><span class="pname">${escapeHtml(p)}</span><span class="pcount">${subtreeCount(p)}</span></button>`;
+    kids.forEach(c=>{ h+=item(c,depth+1); });
+    return h;
+  };
+  const tops=list.filter(isTop);
+  const body=`<div class="pgroup">${tops.map(p=>item(p,0)).join('')}</div>`;
+  projList.innerHTML=(tops.length?body:'<div class="empty" style="padding:10px 8px">프로젝트 없음</div>')
+    +`<button class="pnew" id="btnNewProject" title="새 프로젝트 추가">＋ 새 프로젝트</button>`;
+  projList.querySelectorAll('[data-caret]').forEach(c=>c.onclick=e=>{ e.stopPropagation(); const p=c.dataset.caret; openProj.has(p)?openProj.delete(p):openProj.add(p); applyTreeVisibility(); });
+  projList.querySelectorAll('.pitem').forEach(b=>{
+    b.onclick=()=>setProject(b.dataset.p);
+    b.ondblclick=e=>{ e.preventDefault(); renameProject(b.dataset.p); };
+    b.oncontextmenu=e=>{ e.preventDefault(); openProjectMenu(b.dataset.p,e); };
+    b.addEventListener('dragstart',e=>{ if(_dragRevive) return; _dragProj=b.dataset.p; e.dataTransfer.effectAllowed='move'; try{e.dataTransfer.setData('text/plain','proj');}catch(_){}; });
+    b.addEventListener('dragend',()=>{ _dragProj=null; });
+    b.addEventListener('dragover',e=>{
+      if(_dragRevive){ e.preventDefault(); b.classList.add('pdrop'); return; }        // 완료함 부활 = 항상 nest
+      if(_dragProj && _dragProj!==b.dataset.p){ e.preventDefault();
+        const r=b.getBoundingClientRect(), y=e.clientY-r.top;
+        _dropZone = y < r.height*0.30 ? 'before' : y > r.height*0.70 ? 'after' : 'nest';   // 가장자리=순서, 중앙=하위
+        b.classList.toggle('pdrop', _dropZone==='nest');
+        b.classList.toggle('dropbefore', _dropZone==='before');
+        b.classList.toggle('dropafter', _dropZone==='after');
+      }
+    });
+    b.addEventListener('dragleave',()=>b.classList.remove('pdrop','dropbefore','dropafter'));
+    b.addEventListener('drop',e=>{ e.preventDefault(); const z=_dropZone; b.classList.remove('pdrop','dropbefore','dropafter');
+      if(_dragRevive){ reviveDrop(b.dataset.p); return; }
+      if(_dragProj){ const c=_dragProj; _dragProj=null;
+        if(z==='before') reorderProject(c, b.dataset.p, true);
+        else if(z==='after') reorderProject(c, b.dataset.p, false);
+        else setProjectParent(c, b.dataset.p);
+      } });
+  });
+  projList.querySelector('#btnNewProject').onclick=startNewProjectInline;
+  applyTreeVisibility();
+}
+function setProjectParent(child, parent){
+  if(!child || child===parent) return;
+  if(parent && isDescendant(parent, child)){ showToast('자기 하위로는 넣을 수 없어요'); return; }
+  markUndo(); ensureProjectMeta();
+  db.projectMeta[child].parent = parent || null;
+  if(parent) openProj.add(parent);   // reveal where it landed
+  persist(); renderSidebar(); renderProjectBar();
+  showToast(parent?`'${child}' → '${parent}' 하위로`:`'${child}' 최상위로`);
+}
+// drag onto an edge → reorder only (become a sibling of the target at that position, no nesting)
+function reorderProject(dragged, target, before){
+  if(!dragged || dragged===target) return;
+  markUndo(); ensureProjectMeta();
+  let list = projectList().filter(p=>p!==dragged);
+  const ti = list.indexOf(target);
+  if(ti<0){ return; }
+  list.splice(before?ti:ti+1, 0, dragged);
+  list.forEach((p,i)=>{ if(db.projectMeta[p]) db.projectMeta[p].ord=i; });   // renumber to the new order
+  db.projectMeta[dragged].parent = parentOf(target)||null;                   // same level as the target
+  persist(); renderSidebar(); renderProjectBar();
+  showToast('순서 변경됨');
+}
+// each task card → its own subproject (parent = the card's project); the card moves inside it
+function subprojName(n){ let nm=dispId(n.id); if(!nm || nm[0]==='#') nm=(n.title||n.text||'항목').trim().slice(0,28); return nm||'항목'; }
+function convertCardsToSubprojects(scope){
+  ensureProjectMeta();
+  const targets = db.nodes.filter(n=> n.kind!=='text' && n.state!=='Done' && (!scope || (n.project||'기타')===scope));
+  if(!targets.length){ if(scope) showToast('전개할 카드 없음'); return 0; }
+  markUndo();
+  const used=new Set(projectList());
+  const uniq=base=>{ let nm=base||'항목', i=2; while(used.has(nm)){ nm=base+' '+i; i++; } used.add(nm); return nm; };
+  let ord = Math.max(0, ...projectList().map(p=>(db.projectMeta[p]&&db.projectMeta[p].ord)||0));
+  targets.forEach(n=>{
+    const parent=n.project||'기타';
+    const nm=uniq(subprojName(n));
+    db.projectMeta[nm]={ num:db.projectSeq++, people:[], parent:parent, ord:++ord };
+    if(!db.extraProjects) db.extraProjects=[]; db.extraProjects.push(nm);
+    n.project=nm;              // move the card into its new subproject
+  });
+  if(scope) openProj.add(scope);   // expand only the exploded project (bulk boot run leaves them collapsed)
+  persist(); renderSidebar(); renderProjectBar();
+  view==='list'?renderList():layout();
+  showToast(targets.length+'개 카드 → 하위 프로젝트로 전개');
+  return targets.length;
+}
+function markActiveProject(){ projList.querySelectorAll('.pitem').forEach(b=>b.classList.toggle('on',b.dataset.p===project)); }
+function setProject(p){
+  if(p===project){ if(doneOpen) closeDone(); if(childrenOf(p).length){ openProj.add(p); applyTreeVisibility(); } return; }
+  if(doneOpen) closeDone();
+  project=p; closePanel(); deselectEdge();
+  tx=60; ty=40; k=1; applyTransform();
+  if(childrenOf(p).length) openProj.add(p);   // mother click reveals its subprojects
+  openAncestors(p);
+  view==='list'?renderList():layout();          // parent → aggregated graph (subtreeProjects) / section overview in list
+  if(view==='graph') fitView();
+  markActiveProject(); applyTreeVisibility();
+  renderProjectBar();
+}
+// double-click a project → rename inline; propagates to every node in that project
+function renameProject(oldName){
+  const btn=projList.querySelector(`.pitem[data-p="${CSS.escape(oldName)}"]`);
+  if(!btn) return;
+  const nameEl=btn.querySelector('.pname');
+  nameEl.setAttribute('contenteditable','true'); nameEl.focus();
+  document.execCommand('selectAll',false,null);
+  let done=false;
+  function commit(save){
+    if(done) return; done=true;
+    nameEl.removeAttribute('contenteditable');
+    const nv=(nameEl.textContent||'').trim();
+    if(save && nv && nv!==oldName && !projectList().includes(nv)){
+      markUndo();
+      db.nodes.forEach(n=>{ if((n.project||'기타')===oldName) n.project=nv; });
+      db.extraProjects=(db.extraProjects||[]).filter(p=>p!==oldName);
+      if(!db.extraProjects.includes(nv)) db.extraProjects.push(nv);
+      if(SEED.projects.includes(oldName)){ (db.hidden=db.hidden||[]).push(oldName); }  // stop the old seed/board name re-listing
+      if(COLLAB_PROJECTS.has(oldName)) COLLAB_PROJECTS.add(nv);
+      if(db.projectMeta&&db.projectMeta[oldName]){ db.projectMeta[nv]=db.projectMeta[oldName]; delete db.projectMeta[oldName]; }  // keep the #number
+      if(project===oldName) project=nv;
+      persist();
+      renderSidebar(); renderProjectBar();
+      view==='list'?renderList():layout();
+    } else { renderSidebar(); }
+  }
+  nameEl.addEventListener('keydown',ev=>{ ev.stopPropagation(); if(ev.key==='Enter'){ev.preventDefault();commit(true);} else if(ev.key==='Escape'){ev.preventDefault();commit(false);} });
+  nameEl.addEventListener('blur',()=>commit(true));
+}
+// ＋ 새 프로젝트 → inline one-line input right above the button (no prompt dialog)
+function startNewProjectInline(){
+  const btn=projList.querySelector('#btnNewProject');
+  if(!btn || projList.querySelector('.pnewrow')) return;
+  const row=document.createElement('div'); row.className='pnewrow';
+  const inp=document.createElement('input'); inp.className='prename'; inp.placeholder='프로젝트 이름';
+  row.appendChild(inp);
+  btn.parentNode.insertBefore(row, btn);
+  inp.focus();
+  let done=false;
+  function commit(save){
+    if(done) return; done=true;
+    const nv=(inp.value||'').trim();
+    row.remove();
+    if(save && nv && !projectList().includes(nv)){
+      markUndo();
+      if(!db.extraProjects) db.extraProjects=[]; db.extraProjects.push(nv);
+      ensureProjectMeta(); persist();
+      project=nv; closePanel(); tx=60;ty=40;k=1;applyTransform();
+      view==='list'?renderList():layout();
+    }
+    renderSidebar(); renderProjectBar();
+  }
+  inp.addEventListener('keydown',ev=>{ ev.stopPropagation(); if(ev.key==='Enter'){ev.preventDefault();commit(true);} else if(ev.key==='Escape'){ev.preventDefault();commit(false);} });
+  inp.addEventListener('blur',()=>commit(true));
+}
+/* ---- project bar: #num · name · collaborators (top-left of canvas) ---- */
+const projBar=document.getElementById('projBar');
+function renderProjectBar(){
+  if(!projBar) return;
+  const p=project;
+  if(!p || view!=='graph'){ projBar.style.display='none'; return; }
+  projBar.style.display='flex';
+  const people=projPeople(p);
+  projBar.innerHTML=`<span class="pb-num">#${projNum(p)}</span>
+    <span class="pb-name">${escapeHtml(p)}</span>
+    <span class="pb-sep">·</span>
+    <span class="pb-people">${people.map((nm,i)=>`<span class="pbchip" data-i="${i}">${escapeHtml(nm)}<span class="x" data-x title="제거">✕</span></span>`).join('')}
+      <button class="pbadd" title="협업자 이름 추가">＋ 협업자</button></span>`;
+  projBar.querySelectorAll('.pbchip').forEach(c=>{ c.querySelector('[data-x]').onclick=()=>{
+    markUndo(); ensureProjectMeta(); db.projectMeta[p].people.splice(+c.dataset.i,1); persist(); renderProjectBar(); }; });
+  projBar.querySelector('.pbadd').onclick=()=>addPersonInline();
+}
+function addPersonInline(){
+  const wrap=projBar.querySelector('.pb-people'), btn=projBar.querySelector('.pbadd');
+  if(!wrap || wrap.querySelector('.pbinput')) return;
+  const inp=document.createElement('input'); inp.className='pbinput'; inp.placeholder='이름';
+  wrap.insertBefore(inp, btn); inp.focus();
+  let done=false;
+  function commit(save){ if(done) return; done=true; const v=(inp.value||'').trim(); inp.remove();
+    if(save && v){ markUndo(); ensureProjectMeta(); (db.projectMeta[project].people=db.projectMeta[project].people||[]).push(v); persist(); }
+    renderProjectBar(); }
+  inp.addEventListener('keydown',ev=>{ ev.stopPropagation(); if(ev.key==='Enter'){ev.preventDefault();commit(true);} else if(ev.key==='Escape'){ev.preventDefault();commit(false);} });
+  inp.addEventListener('blur',()=>commit(true));
+}
+/* ---- project right-click menu: rename / delete ---- */
+function openProjectMenu(name,ev){
+  const cardCount=db.nodes.filter(n=>(n.project||'기타')===name && n.kind!=='text' && n.state!=='Done').length;
+  ctx.innerHTML=`<div class="mlabel">#${projNum(name)} · ${escapeHtml(name)}</div>
+    <button data-a="rename">✎ 이름 변경</button>
+    <button data-a="parent">↳ 상위 프로젝트 지정…</button>
+    ${parentOf(name)?'<button data-a="unparent">⤴ 최상위로 빼기</button>':''}
+    ${cardCount?`<button data-a="explode">⤵ 카드 ${cardCount}개를 하위 프로젝트로 전개</button>`:''}
+    <div class="sep"></div>
+    <button class="danger" data-a="del">🗑 프로젝트 삭제</button>`;
+  ctx.style.display='block';
+  ctx.style.left=Math.min(ev.clientX,innerWidth-210)+'px';
+  ctx.style.top=Math.min(ev.clientY,innerHeight-220)+'px';
+  ctx.querySelectorAll('button').forEach(b=>b.onclick=()=>{ const a=b.dataset.a;
+    if(a==='parent'){ openParentPicker(name,ev); return; }   // keep menu chain open
+    ctx.style.display='none';
+    if(a==='rename') renameProject(name);
+    else if(a==='unparent') setProjectParent(name,null);
+    else if(a==='explode') convertCardsToSubprojects(name);
+    else deleteProject(name);
+  });
+}
+function openParentPicker(name,ev){
+  const cands=projectList().filter(p=>p!==name && !isDescendant(p,name));
+  ctx.innerHTML=`<div class="mlabel">'${escapeHtml(name)}' 상위로 지정</div>
+    <button data-p="">— 최상위 —</button>`+
+    cands.map(p=>`<button data-p="${escapeHtml(p)}">#${projNum(p)} ${escapeHtml(p)}</button>`).join('');
+  ctx.style.display='block';
+  ctx.style.left=Math.min(ev.clientX,innerWidth-210)+'px';
+  ctx.style.top=Math.max(8,Math.min(ev.clientY,innerHeight-Math.min(360,60+cands.length*30)))+'px';
+  ctx.style.maxHeight='60vh'; ctx.style.overflowY='auto';
+  ctx.querySelectorAll('button').forEach(b=>b.onclick=()=>{ ctx.style.display='none'; ctx.style.maxHeight=''; setProjectParent(name, b.dataset.p||null); });
+}
+function deleteProject(name){
+  const ns=db.nodes.filter(n=>(n.project||'기타')===name);
+  if(!confirm(`'${name}' 프로젝트를 삭제할까요?\n카드/메모 ${ns.length}개도 함께 삭제되며 완료함(삭제)에 기록됩니다.`)) return;
+  markUndo();
+  ns.forEach(archiveNode);
+  const del=new Set(ns.map(n=>n.id));
+  db.nodes=db.nodes.filter(n=>!del.has(n.id));
+  db.edges=db.edges.filter(e=>!del.has(e.from)&&!del.has(e.to));
+  del.forEach(id=>delete db.pos[id]);
+  db.extraProjects=(db.extraProjects||[]).filter(p=>p!==name);
+  if(db.projectMeta) delete db.projectMeta[name];
+  if(SEED.projects.includes(name)){ (db.hidden=db.hidden||[]).push(name); }
+  if(project===name){ project=projectList()[0]||''; }
+  selNodes.clear(); selectedId=null; if(panel.classList.contains('open')) panel.classList.remove('open');
+  persist(); renderSidebar(); renderProjectBar();
+  view==='list'?renderList():layout();
+  showToast(`'${name}' 삭제됨`);
+}
+document.getElementById('sbCollapse').onclick=()=>{ document.body.classList.add('sb-collapsed'); setTimeout(()=>{ if(view==='graph') renderEdges(); },200); };
+document.getElementById('sbReopen').onclick=()=>{ document.body.classList.remove('sb-collapsed'); setTimeout(()=>{ if(view==='graph') renderEdges(); },200); };
+// resizable sidebar: drag the divider on its right edge
+(function(){
+  const rz=document.getElementById('sbResize'); if(!rz) return;
+  const setW=w=>document.documentElement.style.setProperty('--sidebar-w', w+'px');
+  const saved=parseInt(localStorage.getItem('gdash-sbw')||'',10);
+  if(saved>=160 && saved<=480) setW(saved);
+  rz.addEventListener('mousedown',e=>{ e.preventDefault(); rz.classList.add('dragging'); document.body.style.userSelect='none';
+    function mm(ev){ setW(Math.max(160,Math.min(480,ev.clientX))); }
+    function mu(ev){ document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu);
+      rz.classList.remove('dragging'); document.body.style.userSelect='';
+      const w=Math.max(160,Math.min(480,ev.clientX)); localStorage.setItem('gdash-sbw',w); if(view==='graph') renderEdges(); }
+    document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu);
+  });
+})();
+
+document.getElementById('btnArrange').onclick=()=>{
+  projectNodes().forEach(n=>delete db.pos[n.id]); persist(); layout(); fitView();
+};
+
+/* =========================================================================
+   PAN / ZOOM / DOUBLE-CLICK CREATE
+   ========================================================================= */
+// hold Space to pan instead of marquee-select
+let spaceDown=false;
+document.addEventListener('keydown',e=>{ if(e.code==='Space'){ const t=e.target; if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return; spaceDown=true; if(view==='graph') viewport.style.cursor='grab'; } });
+document.addEventListener('keyup',e=>{ if(e.code==='Space'){ spaceDown=false; viewport.style.cursor=''; } });
+window.addEventListener('blur',()=>{ spaceDown=false; viewport.style.cursor=''; });
+viewport.addEventListener('mousedown',e=>{
+  const onEmpty = (e.target===viewport || e.target===world || e.target===svg);
+  if(!onEmpty) return;
+  if(e.button===1 || (e.button===0 && spaceDown)){ startPan(e); return; }   // middle-drag or Space+drag → pan
+  if(e.button!==0) return;
+  deselectEdge();
+  startMarquee(e);                                                          // default left-drag → rubber-band select
+});
+function startPan(e){
+  e.preventDefault();
+  const start={x:e.clientX,y:e.clientY,tx,ty};
+  viewport.classList.add('panning');
+  function mm(ev){ tx=start.tx+(ev.clientX-start.x); ty=start.ty+(ev.clientY-start.y); applyTransform(); }
+  function mu(){ document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);viewport.classList.remove('panning'); }
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+}
+function startMarquee(e){
+  const additive=e.shiftKey;
+  const base=additive?new Set(selNodes):new Set();
+  if(!additive){ selNodes=new Set(); selectedId=null; if(panel.classList.contains('open')) panel.classList.remove('open'); applySelClasses(); }
+  const s={x:e.clientX,y:e.clientY};
+  const r=viewport.getBoundingClientRect();
+  const box=document.createElement('div'); box.className='marquee'; viewport.appendChild(box);
+  function mm(ev){
+    const x1=Math.min(s.x,ev.clientX), y1=Math.min(s.y,ev.clientY), x2=Math.max(s.x,ev.clientX), y2=Math.max(s.y,ev.clientY);
+    box.style.left=(x1-r.left)+'px'; box.style.top=(y1-r.top)+'px'; box.style.width=(x2-x1)+'px'; box.style.height=(y2-y1)+'px';
+    const w1=screenToWorld(x1,y1), w2=screenToWorld(x2,y2);
+    const hit=new Set(base);
+    projectNodes().forEach(n=>{ if(n._x==null||!sizes[n.id]) return;
+      if(n._x < w2.x && n._x+sizes[n.id].w > w1.x && n._y < w2.y && n._y+sizes[n.id].h > w1.y) hit.add(n.id); });
+    selNodes=hit; selectedId=null; applySelClasses();
+  }
+  function mu(){ document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu); box.remove(); }
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+}
+viewport.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const r=viewport.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const factor=e.deltaY<0?1.1:1/1.1;
+  const k2=Math.min(2.2,Math.max(.3,k*factor));
+  tx=mx-(mx-tx)*(k2/k); ty=my-(my-ty)*(k2/k); k=k2; applyTransform();
+},{passive:false});
+viewport.addEventListener('dblclick',e=>{
+  if(e.target!==viewport && e.target!==world && e.target!==svg) return;
+  openCreateChooser(e.clientX,e.clientY);
+});
+// double-click empty canvas → pick what to drop here (card task vs free text note)
+function openCreateChooser(cx,cy){
+  const w=screenToWorld(cx,cy);
+  ctx.innerHTML=`
+    <div class="mlabel">여기에 만들기</div>
+    <button data-a="card">＋ 카드 (작업)</button>
+    <button data-a="text">＋ 텍스트 (메모)</button>`;
+  ctx.style.display='block';
+  ctx.style.left=Math.min(cx,innerWidth-190)+'px';
+  ctx.style.top=Math.min(cy,innerHeight-120)+'px';
+  ctx.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.a==='card') createCard(w); else createText(w);
+    ctx.style.display='none';
+  });
+}
+function focusNew(nid){ setTimeout(()=>{ const el=nodesLayer.querySelector(`.node[data-id="${CSS.escape(nid)}"]`); if(el) editTitle(nid,el); },30); }
+function createCard(w){
+  markUndo();
+  const nid='#'+(++nextLocalNum);
+  db.nodes.push({id:nid,title:'새 작업',desc:'',priority:0,priorityLabel:'No priority',
+    due:null,state:'Todo',project,children:[],assignees:[{id:'me',type:'me'}],created:todayStr()});
+  db.pos[nid]={x:w.x-NODE_W/2,y:w.y-55};
+  persist(); layout(); renderSidebar(); focusNew(nid);
+}
+function createText(w){
+  markUndo();
+  const nid='#'+(++nextLocalNum);
+  db.nodes.push({id:nid,kind:'text',text:'',project,created:todayStr()});
+  db.pos[nid]={x:w.x-70,y:w.y-18};
+  persist(); layout(); renderSidebar(); focusNew(nid);
+}
+
+function fitView(){
+  const ns=projectNodes(); if(!ns.length) return;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  ns.forEach(n=>{ minX=Math.min(minX,n._x);minY=Math.min(minY,n._y);
+    maxX=Math.max(maxX,n._x+sizes[n.id].w);maxY=Math.max(maxY,n._y+sizes[n.id].h); });
+  const r=viewport.getBoundingClientRect();
+  const pad=60;
+  k=Math.min(1.1,(r.width-pad*2)/(maxX-minX),(r.height-pad*2)/(maxY-minY));
+  k=Math.max(.3,k);
+  tx=pad-minX*k + (r.width-pad*2-(maxX-minX)*k)/2;
+  ty=pad-minY*k + (r.height-pad*2-(maxY-minY)*k)/2;
+  applyTransform();
+}
+
+// ---- boot ----
+// one-time init: seed the subproject hierarchy from SEED.projectMeta (parent map). Runs once (db.seeded).
+function applyOneTimeSeeds(){
+  if(db.seeded) return; db.seeded=true;
+  ensureProjectMeta();
+  if(window.SEED && SEED.projectMeta){ Object.entries(SEED.projectMeta).forEach(([p,m])=>{ if(m && m.parent && db.projectMeta[p]) db.projectMeta[p].parent=m.parent; }); }
+  saveLocal();
+  if(!projectList().includes(project)) project=projectList()[0]||project;
+  openAncestors(project); renderSidebar(); renderProjectBar();
+  view==='list'?renderList():layout(); if(view==='graph') fitView();
+}
+applyOneTimeSeeds();
+// deep-link: ?p=<projectIndex or name>  &view=graph|list
+const qp=new URLSearchParams(location.search);
+if(qp.has('p')){ const v=qp.get('p'); const byIdx=SEED.projects[+v]; project=byIdx||(projectList().includes(v)?v:project); }
+if(!projectList().includes(project)) project=projectList()[0]||project;
+openAncestors(project);
+renderSidebar();
+renderProjectBar();
+applyTransform();
+layout();
+fitView();
+if(qp.get('view')==='list') setView('list');
+if(qp.has('sel')) openPanel(qp.get('sel'));
+// re-measure once fonts settle so card heights (and dagre packing) don't jump on the first re-layout
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ if(view==='graph'){ layout(); fitView(); } });
+window.addEventListener('resize',()=>{ if(view==='graph') renderEdges(); });
+
+/* ---- local-only build: persistence = browser localStorage (no cloud sync) ---- */
+function scheduleSync(){}
+function showToast(msg){ const t=document.getElementById('toast'); if(!t) return; t.textContent=msg||'저장됨'; t.classList.add('show'); clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),1700); }
+// pin every visible node's exact position so the saved layout reloads identically
+function snapshotPositions(){ projectNodes().forEach(n=>{ if(n._x!=null && sizes[n.id]) db.pos[n.id]={x:n._x,y:n._y}; }); }
+function doSave(){ snapshotPositions(); persist(); showToast('저장됨 (로컬)'); }
+document.getElementById('btnSave').onclick=doSave;
+document.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='s'){ e.preventDefault(); doSave(); } });
+</script>
+</body>
+</html>
