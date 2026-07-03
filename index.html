@@ -242,6 +242,13 @@ body{font-family:var(--font-ui);color:var(--ink);background:var(--bg);overflow:h
 .toolmode button+button{border-left:1px solid var(--line)}
 .toolmode button.on{background:#eef3fe;color:var(--blue)}
 #viewport.tool-pan{cursor:grab}
+/* Done sweep: board keeps done cards dimmed in place; this button batch-moves them to 완료함 */
+#sweepBtn{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);z-index:20;display:none;align-items:center;gap:7px;
+  background:var(--white);border:1px solid var(--line-strong);border-radius:20px;box-shadow:var(--shadow);padding:6px 14px;
+  font-family:var(--font-ui);font-size:11.5px;font-weight:700;color:var(--ink-soft);cursor:pointer}
+#sweepBtn:hover{color:var(--blue);border-color:var(--blue)}
+#sweepBtn.show{display:inline-flex}
+#sweepBtn #sweepCt{background:#edf6f0;border:1px solid #cfe6d7;color:var(--green);border-radius:20px;padding:0 7px;font-size:10.5px}
 
 /* ---------- left project sidebar ---------- */
 #sidebar{position:absolute;top:54px;left:0;bottom:0;width:var(--sidebar-w);background:var(--white);
@@ -403,6 +410,7 @@ body.sb-collapsed #sbReopen{display:block}
     <span><b>긴급</b> = 빨강 링</span>
   </div>
   <div class="zoombadge" id="zoomBadge">100%</div>
+  <button id="sweepBtn" title="보드에 흐리게 남은 Done 카드를 완료함으로 보냄 (Ctrl+Z로 취소 가능)">🧹 Done 정리 <span id="sweepCt">0</span></button>
   <div class="toolmode" id="toolMode">
     <button data-m="select" title="빈 캔버스 드래그 = 마퀴 선택 (단축키 V)">⬚ 선택</button>
     <button data-m="pan" title="빈 캔버스 드래그 = 화면 이동 · 스크롤도 이동 (단축키 H)">✋ 이동</button>
@@ -562,7 +570,8 @@ function nodesOfProject(p){ return db.nodes.filter(n=>(n.project||'기타')===p 
 function childrenOf(p){ return projectList().filter(c=>parentOf(c)===p && c!==p); }
 // a project + all its descendants (so a parent's graph aggregates every subproject's tasks)
 function subtreeProjects(p,seen){ seen=seen||new Set(); if(seen.has(p)) return []; seen.add(p); const out=[p]; childrenOf(p).forEach(c=>subtreeProjects(c,seen).forEach(x=>out.push(x))); return out; }
-function projectNodes(){ const ps=new Set(subtreeProjects(project)); return db.nodes.filter(n=>ps.has(n.project||'기타') && n.state!=='Done'); }
+// Done 카드도 보드에 남는다(흐림) — 🧹 Done 정리로 swept=true 된 것만 보드에서 빠짐
+function projectNodes(){ const ps=new Set(subtreeProjects(project)); return db.nodes.filter(n=>ps.has(n.project||'기타') && (n.state!=='Done' || !n.swept)); }
 function projectEdges(){
   const ids=new Set(projectNodes().map(n=>n.id));
   return db.edges.filter(e=>ids.has(e.from)&&ids.has(e.to));
@@ -695,6 +704,7 @@ function layout(){
   ns.forEach(n=>{ const el=els[n.id]; el.style.left=n._x+'px'; el.style.top=n._y+'px'; });
   renderEdges();
   wireNodeEvents();
+  updateSweepBtn();
 }
 
 function anchorOut(n){ return {x:n._x+sizes[n.id].w, y:n._y+sizes[n.id].h/2}; }
@@ -834,8 +844,7 @@ function wireNode(el){
   if(etaEl){ etaEl.addEventListener('mousedown',ev=>ev.stopPropagation()); etaEl.addEventListener('click',ev=>{ ev.stopPropagation(); const nn=nodeById(id); nn.eta=nextEta(nn.eta); persist(); refreshNode(id); }); }
   const stEl=el.querySelector('[data-role=state]');
   if(stEl){ stEl.addEventListener('mousedown',ev=>ev.stopPropagation()); stEl.addEventListener('click',ev=>{ ev.stopPropagation();
-    markUndo(); const nn=nodeById(id); nn.state=STATE_ORDER[(STATE_ORDER.indexOf(nn.state)+1)%STATE_ORDER.length]; stampDone(nn); persist(); refreshNode(id);
-    if(selectedId===id){ const s=STATE[nn.state]; const p=$('#pState'); if(p) p.innerHTML=`<span class="statedot" style="display:inline-block;background:${s.color}"></span> ${s.label}`; const fs=$('#fState'); if(fs) fs.value=nn.state; }
+    openStateMenu(id, ev.clientX, ev.clientY);   // 순환 금지 — 상태를 고르게 한다 (실수 Done 방지)
   }); }
   const subsEl=el.querySelector('[data-role=subs]');
   if(subsEl){ subsEl.style.cursor='pointer'; subsEl.addEventListener('mousedown',ev=>ev.stopPropagation()); subsEl.addEventListener('click',ev=>{ ev.stopPropagation(); expandSubtasks(id); }); }
@@ -844,7 +853,6 @@ function wireNodeEvents(){ nodesLayer.querySelectorAll('.node').forEach(wireNode
 // update ONE card in place — never re-run dagre on edits (that caused the resize jitter)
 function refreshNode(id){
   const n=nodeById(id);
-  if(n && n.state==='Done'){ if(selectedId===id) closePanel(); snapshotPositions(); layout(); renderSidebar(); return; }   // just completed → drop off the board, others stay put
   const old=nodesLayer.querySelector(`.node[data-id="${CSS.escape(id)}"]`);
   if(!old||!n||n._x==null){ layout(); return; }
   const el=buildNodeEl(n);
@@ -853,6 +861,41 @@ function refreshNode(id){
   sizes[id]={w:el.offsetWidth||NODE_W, h:el.offsetHeight||120};
   wireNode(el);
   renderEdges();
+}
+// 상태 변경은 전부 여기로 통일 — 위치 불변. Done이어도 카드는 제자리에 흐리게 남는다.
+function setState(id,s){
+  const n=nodeById(id); if(!n||n.state===s) return;
+  markUndo(); snapshotPositions();
+  n.state=s; stampDone(n);
+  n.swept=false;   // Done이 돼도 보드에 남고(흐림), Done에서 나와도 정식 노출 — 치우는 건 오직 sweepDone
+  persist(); refreshNode(id); renderSidebar(); updateSweepBtn();
+  if(selectedId===id){ const st=STATE[s]; const p=$('#pState'); if(p) p.innerHTML=`<span class="statedot" style="display:inline-block;background:${st.color}"></span> ${st.label}`; const fs=$('#fState'); if(fs) fs.value=s; }
+  if(s==='Done') showToast('✓ Done — 카드는 제자리에 남음 · 🧹 Done 정리로 완료함 이동');
+}
+// 상태 점/우클릭 → 상태 선택 팝업 (순환 없음)
+function openStateMenu(id,cx,cy){
+  const n=nodeById(id); if(!n) return;
+  ctx.innerHTML=`<div class="mlabel">상태 변경</div>`+STATE_ORDER.map(s=>
+    `<button data-s="${s}"><span class="statedot" style="display:inline-block;background:${STATE[s].color};margin-right:7px"></span>${STATE[s].label}${s===n.state?' ✓':''}</button>`).join('');
+  ctx.style.display='block';
+  ctx.style.left=Math.min(cx,innerWidth-170)+'px';
+  ctx.style.top=Math.min(cy,innerHeight-240)+'px';
+  ctx.querySelectorAll('button').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); setState(id,b.dataset.s); ctx.style.display='none'; });
+}
+// 🧹 Done 정리: 보드에 남아있는 Done 카드를 일괄 완료함으로 — 카드가 보드에서 빠지는 유일한 경로
+function sweepDone(){
+  const targets=projectNodes().filter(n=>n.state==='Done');
+  if(!targets.length) return;
+  markUndo(); snapshotPositions();
+  targets.forEach(n=>n.swept=true);
+  persist(); layout(); renderSidebar();
+  showToast(targets.length+'개 완료함으로 이동 · Ctrl+Z로 취소');
+}
+function updateSweepBtn(){
+  const btn=document.getElementById('sweepBtn'); if(!btn) return;
+  const ct=projectNodes().filter(n=>n.state==='Done').length;
+  const sp=document.getElementById('sweepCt'); if(sp) sp.textContent=ct;
+  btn.classList.toggle('show', ct>0);
 }
 function editDue(id,anchorEl){
   const n=nodeById(id);
@@ -1035,7 +1078,9 @@ function openNodeMenu(id,ev){
   ctx.style.display='block';
   ctx.style.left=Math.min(ev.clientX,innerWidth-190)+'px';
   ctx.style.top=Math.min(ev.clientY,innerHeight-260)+'px';
-  ctx.querySelectorAll('button').forEach(b=>b.onclick=()=>{ menuAction(id,b.dataset.a); ctx.style.display='none'; });
+  ctx.querySelectorAll('button').forEach(b=>b.onclick=ev=>{ ev.stopPropagation();
+    if(b.dataset.a==='cycle'){ openStateMenu(id, parseFloat(ctx.style.left)||innerWidth/2, parseFloat(ctx.style.top)||innerHeight/2); return; }   // 같은 자리에 상태 선택 팝업
+    menuAction(id,b.dataset.a); ctx.style.display='none'; });
 }
 document.addEventListener('click',e=>{ if(!ctx.contains(e.target)) ctx.style.display='none'; });
 function menuAction(id,a){
@@ -1043,25 +1088,22 @@ function menuAction(id,a){
   if(a==='del'){ deleteNode(id); return; }
   if(a==='expand'){ expandSubtasks(id); return; }
   if(a==='open'){ openPanel(id); return; }
-  if(a==='cycle'){
-    const i=STATE_ORDER.indexOf(n.state);
-    markUndo(); n.state=STATE_ORDER[(i+1)%STATE_ORDER.length]; stampDone(n); persist(); layout(); return;
-  }
   if(a.startsWith('next-')){
     const type=a==='next-succ'?'success':a==='next-fail'?'fail':'next';
     addNext(id,type);
   }
 }
 function addNext(id,type){
-  markUndo();
+  markUndo(); snapshotPositions();   // 기존 카드 고정
   const n=nodeById(id);
   const nid='#'+(++nextLocalNum);
   const child={id:nid,title:'새 작업',desc:'',priority:0,priorityLabel:'No priority',
     due:null,state:'Todo',project:n.project,children:[],assignees:[{id:'me',type:'me'}],created:todayStr()};
   db.nodes.push(child);
   db.edges.push({id:'e'+Date.now(),from:id,to:nid,type});
-  // place to the right of parent
+  // place to the right of parent (fallback: fixed spot — dagre가 임의 배치하지 않도록 항상 명시 pos)
   if(n._x!=null) db.pos[nid]={x:n._x+sizes[id].w+90, y:n._y + (type==='fail'?90:type==='success'?-90:0)};
+  else db.pos[nid]={x:60,y:60};
   persist(); layout(); renderSidebar();
   // focus the new title
   setTimeout(()=>{ const el=nodesLayer.querySelector(`.node[data-id="${CSS.escape(nid)}"]`); if(el) editTitle(nid,el); },30);
@@ -1081,15 +1123,19 @@ function deleteNode(id){
 // turn a node's subtasks into connected child boxes (parent --sub--> child)
 function expandSubtasks(id){
   const n=nodeById(id); if(!n||!n.children||!n.children.length) return;
-  markUndo();
+  markUndo(); snapshotPositions();   // 기존 카드 전부 제자리 고정
+  // 새 자식 박스는 부모 오른쪽에 세로로 명시 배치 — dagre 재배치/카메라 점프 없음
+  const baseX = (n._x!=null && sizes[id]) ? n._x+sizes[id].w+90 : 40;
+  let py = n._y!=null ? n._y : 40;
   n.children.forEach((c,idx)=>{
     if(!nodeById(c.id)){
       db.nodes.push({ id:c.id, title:c.title||'서브태스크', desc:'', priority:0, priorityLabel:'No priority',
         due:null, state:c.state||'Todo', project:n.project, children:[], assignees:[], created:todayStr() });
+      if(!db.pos[c.id]){ db.pos[c.id]={x:baseX, y:py}; py+=110; }
     }
     if(!db.edges.some(e=>e.from===id&&e.to===c.id)) db.edges.push({id:'es-'+id+'-'+idx, from:id, to:c.id, type:'sub'});
   });
-  persist(); layout(); fitView(); renderSidebar();
+  persist(); layout(); renderSidebar();
 }
 function todayStr(){ return TODAY.toISOString().slice(0,10); }
 
@@ -1127,8 +1173,7 @@ function openPanel(id){
       <select id="pAddPerson" class="mini-sel"></select>
     </div>`;
   $('#fTitle').oninput=e=>{ n.title=e.target.value; persist(); refreshNode(id); };
-  $('#fState').onchange=e=>{ markUndo(); n.state=e.target.value; stampDone(n); persist(); refreshNode(id);
-    const st2=STATE[n.state]; $('#pState').innerHTML=`<span class="statedot" style="display:inline-block;background:${st2.color}"></span> ${st2.label}`; };
+  $('#fState').onchange=e=>{ setState(id, e.target.value); };
   $('#fPri').onchange=e=>{ n.priority=+e.target.value; n.priorityLabel=PL[n.priority]; persist(); refreshNode(id); };
   $('#fDue').onchange=e=>{ n.due=e.target.value||null; persist(); refreshNode(id); };
   $('#fDesc').oninput=e=>{ n.desc=e.target.value; persist(); };
@@ -1340,17 +1385,18 @@ function renderDone(){
 function reviveItem(desc, targetProject){
   if(!desc) return;
   markUndo();
-  let pj;
+  let pj, revivedId;
   if(desc.kind==='done'){
     const n=nodeById(desc.nodeId); if(!n){ return; }
-    n.state='Todo'; n.doneAt=null;
+    n.state='Todo'; n.doneAt=null; n.swept=false; revivedId=n.id;
     pj=targetProject||n.project||'기타'; n.project=pj;
     db.hidden=(db.hidden||[]).filter(p=>p!==pj);
   } else {
     const a=(db.archive||[])[desc.archIdx]; if(!a){ return; }
     const n=a.node; if(!n){ return; }
     pj=targetProject||n.project||'기타'; n.project=pj;
-    db.hidden=(db.hidden||[]).filter(p=>p!==pj); db.nodes.push(structuredClone(n));
+    const copy=structuredClone(n); copy.swept=false; revivedId=copy.id;
+    db.hidden=(db.hidden||[]).filter(p=>p!==pj); db.nodes.push(copy);
     db.archive.splice(desc.archIdx,1);
   }
   persist();
@@ -1358,7 +1404,7 @@ function reviveItem(desc, targetProject){
   project=pj; ensureProjectMeta(); openAncestors(pj);
   renderSidebar(); renderProjectBar();
   view==='list'?renderList():layout();
-  if(view==='graph') fitView();
+  if(view==='graph') ensureVisible(revivedId);   // 카메라 전체 점프(fitView) 대신 부활한 카드만 보이게 살짝 이동
   showToast(`'${pj}'로 부활됨`);
 }
 function reviveDrop(targetProject){ const d=_dragRevive; _dragRevive=null; if(d) reviveItem(d, targetProject); }
@@ -1654,6 +1700,7 @@ document.getElementById('sbReopen').onclick=()=>{ document.body.classList.remove
 document.getElementById('btnArrange').onclick=()=>{
   projectNodes().forEach(n=>delete db.pos[n.id]); persist(); layout(); fitView();
 };
+document.getElementById('sweepBtn').onclick=sweepDone;
 
 /* =========================================================================
    PAN / ZOOM / DOUBLE-CLICK CREATE
@@ -1786,6 +1833,9 @@ function applyOneTimeSeeds(){
   openAncestors(project); renderSidebar(); renderProjectBar();
   view==='list'?renderList():layout(); if(view==='graph') fitView();
 }
+// 구버전 마이그레이션: swept 플래그가 없는 Done 카드는 옛 메커니즘에서 이미 보드에서 치워졌던 것 → swept 처리 (보드 범람 방지)
+function sweepLegacyDone(){ (db.nodes||[]).forEach(n=>{ if(n.state==='Done' && n.swept===undefined) n.swept=true; }); }
+sweepLegacyDone();
 applyOneTimeSeeds();
 // deep-link: ?p=<projectIndex or name>  &view=graph|list
 const qp=new URLSearchParams(location.search);
