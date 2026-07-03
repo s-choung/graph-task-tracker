@@ -545,6 +545,20 @@ let view = 'graph';
 let selectedId = null;
 let selNodes = new Set();   // multi-selection of node ids (marquee / shift-click); drives the .nsel highlight
 let nextLocalNum = 900;
+// 매 세션 900부터 재발급하면 지난 세션 카드('#901'…)와 id가 중복돼 nodeById가 옛 노드를 집어
+// 엣지가 카드 없는 좌표를 가리키게 됨 → 존재하는 '#N' 최대값 이후부터 발급
+function bumpLocalNum(){
+  const scan=n=>{ const m=/^#(\d+)$/.exec((n&&n.id)||''); if(m) nextLocalNum=Math.max(nextLocalNum,+m[1]); };
+  (db.nodes||[]).forEach(scan); (db.archive||[]).forEach(a=>scan(a&&a.node));
+}
+bumpLocalNum();
+// 이미 중복돼 저장된 id 복구: 뒤에 온 노드에 새 id 부여 (엣지·pos는 먼저 있던 노드 소유로 유지)
+function fixDupIds(){
+  const seen=new Set();
+  (db.nodes||[]).forEach(n=>{ if(seen.has(n.id)){ n.id='#'+(++nextLocalNum); } else seen.add(n.id); });
+}
+fixDupIds();
+let _layoutPin = false;   // 폰트 로드 완료 후에만 layout()이 위치를 db.pos에 고정 (폰트 로드 전 잘못된 크기로 굳는 것 방지)
 
 // ---- view transform -------------------------------------------------------
 let tx=60, ty=40, k=1;
@@ -701,7 +715,27 @@ function layout(){
     iso.forEach((n,i)=>{ n._x=12+(i%cols)*colW; n._y=startY+Math.floor(i/cols)*rowH; });
   }
 
+  // 겹침 해소: 뷰마다 원점 기준으로 고정된 좌표가 상위(집계) 뷰에서 충돌해 카드가 포개지는 문제 —
+  // 45% 이상 포개진 카드만 아래로 밀어 정리 (일부러 살짝 겹쳐둔 배치는 안 건드림, 정리 후엔 고정되어 다시 안 움직임)
+  (function resolveOverlaps(){
+    const list=ns.filter(n=>n._x!=null&&sizes[n.id]);   // db.nodes 순서 = 생성 순서 → 먼저 있던 카드가 자리를 지키고 나중 카드가 비킴
+    const placed=[];
+    list.forEach(n=>{
+      const s=sizes[n.id]; let guard=0, hit=true;
+      while(hit && guard++<300){
+        hit=false;
+        for(const p of placed){
+          const sp=sizes[p.id];
+          const ox=Math.max(0,Math.min(n._x+s.w,p._x+sp.w)-Math.max(n._x,p._x));
+          const oy=Math.max(0,Math.min(n._y+s.h,p._y+sp.h)-Math.max(n._y,p._y));
+          if(ox*oy>Math.min(s.w*s.h,sp.w*sp.h)*0.45){ n._y=p._y+sp.h+18; hit=true; break; }
+        }
+      }
+      placed.push(n);
+    });
+  })();
   ns.forEach(n=>{ const el=els[n.id]; el.style.left=n._x+'px'; el.style.top=n._y+'px'; });
+  if(_layoutPin) snapshotPositions();   // 폰트 로드 후부터 배치 결과 고정 → 이후 layout()은 재배치 안 함 (오직 ↹정렬 버튼만 db.pos를 비워 재배치)
   renderEdges();
   wireNodeEvents();
   updateSweepBtn();
@@ -1131,7 +1165,7 @@ function expandSubtasks(id){
     if(!nodeById(c.id)){
       db.nodes.push({ id:c.id, title:c.title||'서브태스크', desc:'', priority:0, priorityLabel:'No priority',
         due:null, state:c.state||'Todo', project:n.project, children:[], assignees:[], created:todayStr() });
-      if(!db.pos[c.id]){ db.pos[c.id]={x:baseX, y:py}; py+=110; }
+      if(!db.pos[c.id]){ db.pos[c.id]={x:baseX, y:py}; py+=130; }
     }
     if(!db.edges.some(e=>e.from===id&&e.to===c.id)) db.edges.push({id:'es-'+id+'-'+idx, from:id, to:c.id, type:'sub'});
   });
@@ -1850,7 +1884,9 @@ fitView();
 if(qp.get('view')==='list') setView('list');
 if(qp.has('sel')) openPanel(qp.get('sel'));
 // re-measure once fonts settle so card heights (and dagre packing) don't jump on the first re-layout
-if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ if(view==='graph'){ layout(); fitView(); } });
+function _enableLayoutPin(){ if(_layoutPin) return; _layoutPin=true; if(view==='graph'){ layout(); fitView(); } }   // 폰트 로드 후 올바른 크기로 재배치하고 그때부터 위치 고정
+if(document.fonts&&document.fonts.ready){ document.fonts.ready.then(_enableLayoutPin); } else { _enableLayoutPin(); }
+setTimeout(_enableLayoutPin, 1500);   // 폰트 API 미지원/지연 대비 안전장치
 window.addEventListener('resize',()=>{ if(view==='graph') renderEdges(); });
 
 /* ---- local-only build: persistence = browser localStorage (no cloud sync) ---- */
